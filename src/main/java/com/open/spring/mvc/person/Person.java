@@ -92,6 +92,7 @@ public class Person extends Submitter implements Comparable<Person> {
      */
 
     @NotEmpty
+    @JsonIgnore
     private String password;
 
     @NotEmpty
@@ -445,7 +446,7 @@ public class Person extends Submitter implements Comparable<Person> {
         output += "\"id\":"+ String.valueOf(this.getId())+","; //id
         output += "\"uid\":\""+ String.valueOf(this.getUid())+"\","; //user id (github/email)
         output += "\"email\":\""+ String.valueOf(this.getEmail())+"\","; //email
-        output += "\"password\":\""+ String.valueOf(this.getPassword())+"\","; //password
+        // output += "\"password\":\""+ String.valueOf(this.getPassword())+"\","; //password
         output += "\"name\":\""+ String.valueOf(this.getName())+"\","; // name
         output += "\"sid\":\""+ String.valueOf(this.getSid())+"\","; // student id
         output += "\"kasmServerNeeded\":\""+ String.valueOf(this.getKasmServerNeeded())+"\","; // kasm server needed

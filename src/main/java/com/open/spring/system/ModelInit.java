@@ -51,7 +51,6 @@ import com.open.spring.mvc.student.StudentQueue;
 import com.open.spring.mvc.student.StudentQueueJPARepository;
 import com.open.spring.mvc.synergy.SynergyGrade;
 import com.open.spring.mvc.synergy.SynergyGradeJpaRepository;
-import com.open.spring.mvc.user.UserJpaRepository;
 import com.open.spring.mvc.quiz.QuizScore;
 import com.open.spring.mvc.quiz.QuizScoreRepository;
 import com.open.spring.mvc.resume.Resume;
@@ -86,7 +85,6 @@ public class ModelInit {
     @Autowired
     UnifiedGameRepository gameJpaRepository;
     
-    @Autowired UserJpaRepository userJpaRepository;
     @Autowired AssignmentJpaRepository assignmentJpaRepository;
     @Autowired AssignmentSubmissionJPA submissionJPA;
     @Autowired SynergyGradeJpaRepository gradeJpaRepository;
@@ -107,6 +105,83 @@ public class ModelInit {
             try {
                 if (dataSource != null) {
                     try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+                        // ========== DATABASE CLEANUP - DISABLED ==========
+                        // Database cleanup has been disabled to prevent tables from being dropped on startup
+                        // Uncomment the section below if you need to manually clean up specific tables
+                        /*
+                        System.out.println("Starting database cleanup...");
+                        
+                        // 1. Drop User tables (0 rows, 0 code references)
+                        try {
+                            st.execute("DROP TABLE IF EXISTS user;");
+                            st.execute("DROP TABLE IF EXISTS user_seq;");
+                            System.out.println("Dropped 'user' tables");
+                        } catch (SQLException e) {
+                            System.out.println("WARNING: Could not drop user tables");
+                        }
+                        
+                        // 2. Drop responses table (0 rows, 0 code references)
+                        try {
+                            st.execute("DROP TABLE IF EXISTS responses;");
+                            System.out.println("Dropped 'responses' table");
+                        } catch (SQLException e) {
+                            System.out.println("WARNING: Could not drop responses table");
+                        }
+                        
+                        // 3. Drop student table (0 rows, 0 code references)
+                        try {
+                            st.execute("DROP TABLE IF EXISTS student;");
+                            System.out.println("Dropped 'student' table");
+                        } catch (SQLException e) {
+                            System.out.println("WARNING: Could not drop student table");
+                        }
+                        
+                        // 4. Drop person_user_mapping tables (0 rows, 0 code references)
+                        try {
+                            st.execute("DROP TABLE IF EXISTS person_user_mapping;");
+                            st.execute("DROP TABLE IF EXISTS person_user_mapping_seq;");
+                            System.out.println("Dropped 'person_user_mapping' tables");
+                        } catch (SQLException e) {
+                            System.out.println("WARNING: Could not drop person_user_mapping tables");
+                        }
+                        
+                        // 5. Drop assignment_queue table (0 rows, migrated to JSON)
+                        try {
+                            st.execute("DROP TABLE IF EXISTS assignment_queue;");
+                            st.execute("DROP TABLE IF EXISTS assignment_queue_seq;");
+                            System.out.println("Dropped 'assignment_queue' tables");
+                        } catch (SQLException e) {
+                            System.out.println("WARNING: Could not drop assignment_queue tables");
+                        }
+                        
+                        // 6. Drop orphaned Hibernate Envers audit tables (0 @Audited annotations)
+                        String[] auditTables = {
+                            "HTE_announcement", "HTE_assignment", "HTE_assignment_queue",
+                            "HTE_assignment_submission", "HTE_bank", "HTE_bathroom_queue",
+                            "HTE_blackjack", "HTE_comment", "HTE_game", "HTE_gemini",
+                            "HTE_groups", "HTE_hall_pass", "HTE_issue", "HTE_jokes",
+                            "HTE_note", "HTE_person", "HTE_person_role", "HTE_person_user_mapping",
+                            "HTE_plant", "HTE_progress_bar", "HTE_quiz_scores", "HTE_resume",
+                            "HTE_student_queue", "HTE_synergy_grade", "HTE_synergy_grade_request",
+                            "HTE_tasks", "HTE_teacher", "HTE_teacher_grading_team_teach",
+                            "HTE_tinkle", "HTE_train", "HTE_user", "HTE_user_stocks_table",
+                            "HT_groups", "HT_person", "HT_submitter"
+                        };
+                        
+                        int droppedAuditTables = 0;
+                        for (String tableName : auditTables) {
+                            try {
+                                st.execute("DROP TABLE IF EXISTS " + tableName + ";");
+                                droppedAuditTables++;
+                            } catch (SQLException ignored) {}
+                        }
+                        System.out.println("Dropped " + droppedAuditTables + " orphaned audit tables");
+                        
+                        System.out.println("Conservative database cleanup complete!");
+                        */
+                        // ========== DATABASE CLEANUP - END ==========
+
+
                         String create = "CREATE TABLE IF NOT EXISTS adventure ("
                                 + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                                 + "person_id INTEGER,"
@@ -285,13 +360,6 @@ public class ModelInit {
                 }
             }
 
-            // User[] userArray = User.init();
-            // for (User user : userArray) {
-            //     List<User> userFound = userJpaRepository.findByUsernameIgnoreCase(user.getUsername()); 
-            //     if (userFound.size() == 0) {
-            //         userJpaRepository.save(new User(user.getUsername(), user.getPassword(), user.getRole(), user.isEnabled(), user.getBalance(), user.getStonks()));
-            //     }
-            // }
 
             String[] jokesArray = Jokes.init();
             for (String joke : jokesArray) {

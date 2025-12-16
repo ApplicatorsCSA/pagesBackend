@@ -6,98 +6,48 @@
 <!-- page style -->
 <th:block layout:fragment="style" th:remove="tag">
     <style>
-        /* Initial styling for the profile picture */
-        .profile-picture-container img {
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            transition: transform 0.3s ease;
-            opacity: 1;
-            transform-origin: bottom center;
-            /* Set anchor point to bottom center */
-        }
-
-        /* Enlarges the profile picture when hovered */
-        .profile-picture-container:hover img {
-            transform: scale(2);
-            /* Enlarges the image */
-            opacity: 1;
-        }
+        .small-cell { white-space: nowrap; }
+        .wrap-cell { max-width: 320px; word-break: break-word; }
     </style>
 </th:block>
 
 <!-- page title -->
-<th:block layout:fragment="title" th:remove="tag">Person List</th:block>
+<th:block layout:fragment="title" th:remove="tag">Grades List</th:block>
 
 <th:block layout:fragment="body" th:remove="tag">
-    <div class="container">
+    <div sec:authorize="hasRole('ROLE_ADMIN')">
+        <div class="container">
 
-        <h3>Person Viewer</h3>
+            <h3>Grades Viewer</h3>
 
-        <!-- Column visibility toggle buttons -->
-        <div class="d-flex flex-wrap mb-3">
-            <button class="btn btn-secondary toggle-column active" data-column="0">ID#</button>
-            <button class="btn btn-secondary toggle-column active" data-column="1">UID</button>
-            <button class="btn btn-secondary toggle-column active" data-column="2">Name</button>
-            <button class="btn btn-secondary toggle-column inactive" data-column="3">Email</button>
-            <button class="btn btn-secondary toggle-column inactive" data-column="4">KSM</button>
-            <button class="btn btn-secondary toggle-column active" data-column="5">PFP</button>
-            <button class="btn btn-secondary toggle-column inactive" data-column="6">SID</button>
-            <button class="btn btn-secondary toggle-column active" data-column="7">Action</button>
-            <button class="btn btn-secondary toggle-column inactive" data-column="8">Import/Export</button>
-        </div>
-        <br>
-
-        <div class="row align-items-md-stretch table-responsive">
-            <!-- Table displaying the list of persons -->
-            <table id="personTable" class="table">
+            <div class="row align-items-md-stretch table-responsive">
+            <table id="gradesTable" class="table table-sm table-striped">
                 <thead>
                     <tr>
                         <th>ID#</th>
                         <th>UID</th>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>KSM</th>
-                        <th>PFP</th>
-                        <th>SID</th>
+                        <th>Assignment</th>
+                        <th>Score</th>
+                        <th>Course</th>
+                        <th>Submission</th>
                         <th>Action</th>
                         <th>Import/Export</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr th:each="person : ${list}">
-                        <td th:text="${person.id}">Person ID</td>
+                    <tr th:each="grade : ${list}">
+                        <td class="small-cell" th:text="${grade.id}">ID</td>
+                        <td class="small-cell" th:text="${grade.uid}">UID</td>
+                        <td class="wrap-cell" th:text="${grade.assignment}">Assignment</td>
+                        <td class="small-cell" th:text="${grade.score}">Score</td>
+                        <td class="small-cell" th:text="${grade.course}">Course</td>
+                        <td class="wrap-cell" th:text="${grade.submission}">Submission</td>
                         <td>
-                            <a th:href="'https://github.com/' + ${person.uid}" target="_blank"
-                                th:text="${person.uid}">User UID</a>
-                        </td>
-                        <td th:text="${person.name}">Name</td>
-                        <td th:text="${person.email}">Email</td>
-                        <td>
-                            <img th:src="@{${person.kasmServerNeeded} ? 'https://github.com/user-attachments/assets/da1c6827-8c47-4ba9-a979-980eb3c685cd' : 'https://github.com/user-attachments/assets/53e808fc-3c01-4cae-b403-73116a71122f'}"
-                                class="custom-checkbox" alt="KSM Status" style="width: 20px; height: 20px;" />
-                        </td>
-                        <td>
-                            <div class="profile-picture-container">
-                                <a id="profile-link-${person.id}" th:data-person-id="${person.id}" target="_blank">
-                                    <img id="profile-img-${person.id}" th:src="|https://github.com/${person.uid}.png|"
-                                        alt="Profile Picture"
-                                        onerror="this.onerror=null; this.src='https://github.com/user-attachments/assets/13dec9b2-21d6-458e-b099-f5f85ae9caf2';" />
-                                </a>
-                            </div>
-                        </td>
-                        <td th:text="${person.sid}">Student ID</td>
-                        <td>
-                            <a th:href="@{/mvc/person/update/{id}(id = ${person.id})}" class="btn btn-warning btn-sm"
-                                name="update">Update</a>
-                            <a sec:authorize="hasRole('ROLE_ADMIN')"
-                                th:href="@{/mvc/person/update/roles/{id}(id = ${person.id})}"
-                                class="btn btn-warning btn-sm" name="update">Update Roles</a>
-                            <a th:href="@{/mvc/person/delete/{id}(id = ${person.id})}"
-                                class="btn btn-danger btn-sm">Delete</a>
+                            <a th:href="@{/mvc/grades/update/{id}(id=${grade.id})}" class="btn btn-warning btn-sm">Edit</a>
+                            <a th:href="@{/mvc/grades/delete/{id}(id=${grade.id})}" class="btn btn-danger btn-sm">Delete</a>
                         </td>
                         <td>
-                            <button class="btn btn-info btn-sm" th:attr="data-id=${person.id}" onclick="exportRow(this)">Export</button>
+                            <button class="btn btn-info btn-sm" th:attr="data-id=${grade.id}" onclick="exportRow(this)">Export</button>
                         </td>
                     </tr>
                 </tbody>
@@ -105,17 +55,16 @@
         </div>
 
         <div class="mt-3">
+            <a class="btn btn-primary" th:href="@{/mvc/grades/create}">Create New Grade</a>
             <button class="btn btn-success" onclick="exportCSV()">Export CSV</button>
             <button class="btn btn-info" onclick="document.getElementById('csvFileInput').click()">Import CSV</button>
             <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importCSV(event)">
         </div>
 
+</div>
+    <div sec:authorize="!hasRole('ROLE_ADMIN')" class="container">
+        <div class="alert alert-danger">Access denied: administrators only.</div>
     </div>
-</th:block>
-
-<!-- Overlay for update page-->
-<th:block layout:fragment="overlay-body" th:remove="tag">
-    <div id="overlay-Container"></div>
 </th:block>
 
 <!-- scripts -->
@@ -123,21 +72,21 @@
     <script>
         function exportRow(btn) {
             const id = btn.getAttribute('data-id');
-            fetch('/person/' + id)
+            fetch('/api/grades/' + id)
                 .then(res => res.json())
                 .then(data => {
                     const s = JSON.stringify(data, null, 2);
                     const blob = new Blob([s], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url; a.download = 'person-' + id + '.json'; a.click();
+                    a.href = url; a.download = 'grade-' + id + '.json'; a.click();
                     URL.revokeObjectURL(url);
                 })
                 .catch(e => alert('Export failed: ' + e));
         }
 
         function exportCSV() {
-            const table = document.getElementById('personTable');
+            const table = document.getElementById('gradesTable');
             const rows = table.querySelectorAll('tr');
             let csv = [];
 
@@ -171,7 +120,7 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'persons.csv';
+            a.download = 'grades.csv';
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -192,7 +141,7 @@
                     return;
                 }
 
-                // Parse CSV and create persons
+                // Parse CSV and create grades
                 const headers = lines[0].split(',').map(h => h.trim());
                 let imported = 0;
                 let failed = 0;
@@ -202,21 +151,21 @@
                     if (lines[i].trim() === '') continue;
 
                     const values = parseCSVLine(lines[i]);
-                    const person = {};
+                    const grade = {};
 
                     headers.forEach((header, index) => {
                         if (values[index] !== undefined && values[index] !== '') {
-                            person[header] = values[index];
+                            grade[header] = values[index];
                         }
                     });
 
                     // Send to backend API
-                    const promise = fetch('/person/create', {
+                    const promise = fetch('/api/grades', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify(person)
+                        body: JSON.stringify(grade)
                     })
                     .then(response => {
                         if (response.ok) {
@@ -267,10 +216,6 @@
             return result;
         }
     </script>
-    <!-- script for filtering columns-->
-    <script type="text/javascript" src="/static/js/read-filter.js" th:src="@{/js/read-filter.js}"></script>
-    <!-- script for updating overlay (used for update button)-->
-    <script type="text/javascript" src="/static/js/read-overlay.js" th:src="@{/js/read-overlay.js}"></script>
 </th:block>
 
 </html>
