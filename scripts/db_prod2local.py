@@ -37,7 +37,7 @@ LOG_FILE = "/tmp/db_migrate.log"
 
 # Remote database configuration
 PROD_URL = "https://spring.opencodingsociety.com"
-PROD_AUTH_URL = f"{PROD_URL}/authenticate"
+PROD_LOGIN_URL = f"{PROD_URL}/login"  # Changed from /authenticate
 DATA_URL = f"{PROD_URL}/api/exports/getAll"
 
 # Credentials
@@ -72,27 +72,27 @@ def load_admin_password():
 
 
 def authenticate_to_production(password):
-    """Authenticate to production server and get JWT cookie"""
+    """Authenticate to production server using form login and get session cookie"""
     print("Authenticating to production server...")
+    # Use form-based login (not JWT) because @JsonIgnore on password field
+    # prevents JSON authentication from working
     auth_data = {
-        "uid": ADMIN_UID,
+        "username": ADMIN_UID,  # Changed from uid
         "password": password
-    }
-    headers = {
-        "Content-Type": "application/json"
     }
     
     try:
-        response = requests.post(PROD_AUTH_URL, json=auth_data, headers=headers, timeout=10)
-        response.raise_for_status()
+        # Create a session to handle cookies and redirects
+        session = requests.Session()
+        response = session.post(PROD_LOGIN_URL, data=auth_data, timeout=10, allow_redirects=False)
         
-        # Extract JWT cookie
-        if "jwt_java_spring" in response.cookies:
+        # Form login returns 302 redirect on success
+        if response.status_code == 302 and "sess_java_spring" in response.cookies:
             print(f"  Authenticated as '{ADMIN_UID}'")
-            return response.cookies
+            return session.cookies
         else:
-            print("  Error: No JWT cookie received from server")
-            print(f"  Response: {response.text}")
+            print(f"  Authentication failed: HTTP {response.status_code}")
+            print(f"  Response: {response.text[:200]}")
             sys.exit(1)
     except requests.exceptions.HTTPError as e:
         print(f"  Authentication failed: HTTP {e.response.status_code}")
@@ -460,7 +460,7 @@ def main():
         print("Exiting without making changes.")
         sys.exit(0)
     
-    # Step 3: Fetch remote data (now with authentication)
+    # Step 3: Fetch remote data (now with form-based authentication)
     remote_data = fetch_remote_data()
     if remote_data:
         save_data_to_json(remote_data)

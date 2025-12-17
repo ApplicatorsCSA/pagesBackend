@@ -205,6 +205,8 @@ public class ModelInit {
                         st.execute(create);
                         System.out.println("Ensured 'adventure' table exists");
                         // Seed default adventure rows if none exist (instantiate in code)
+                        // TEMPORARILY DISABLED - Adventure seeding causes NOT NULL constraint failures
+                        /*
                         try {
                             long advCount = 0L;
                             try { advCount = adventureJpaRepository.count(); } catch (Exception ignore) { advCount = 0L; }
@@ -215,6 +217,8 @@ public class ModelInit {
                                 }
                                 System.out.println("Seeded default Adventure rows via Adventure.init()");
                             }
+                        */
+                        try {
                             // Ensure 'details' column exists and migrate existing columns into JSON 'details'
                             try {
                                 try {

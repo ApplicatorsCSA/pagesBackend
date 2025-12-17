@@ -70,6 +70,9 @@ public class MvcSecurityConfig {
                 .requestMatchers(HttpMethod.POST,"/mvc/extract/**").hasAuthority("ROLE_ADMIN")
                 .requestMatchers(HttpMethod.POST,"/mvc/import/**").hasAuthority("ROLE_ADMIN")
                 .requestMatchers("/mvc/grades/**").hasAuthority("ROLE_ADMIN")
+                .requestMatchers("/mvc/assignments/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
+                .requestMatchers("/mvc/bank/read").hasAuthority("ROLE_ADMIN")
+                .requestMatchers("/mvc/progress/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
 
                 // Fallback ---------------------------------------------------
                 .requestMatchers("/**").permitAll()
