@@ -34,13 +34,15 @@ public class Groups extends Submitter {
 
     private String name;
     private String period;
+    private String course;
 
     public Groups() {
     }
 
-    public Groups(String name, String period, List<Person> groupMembers) {
+    public Groups(String name, String period, String course, List<Person> groupMembers) {
         this.name = name;
         this.period = period;
+        this.course = course;
         this.groupMembers = groupMembers;
     }
 

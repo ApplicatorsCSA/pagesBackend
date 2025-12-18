@@ -43,6 +43,7 @@ public class GroupsApiController {
     public static class GroupCreateDto {
         private String name;
         private String period;
+        private String course;        
         private List<Long> memberIds;
     }
 
@@ -52,6 +53,7 @@ public class GroupsApiController {
     public static class GroupUpdateDto {
         private String name;
         private String period;
+        private String course;        
     }
 
     @Data
@@ -67,6 +69,7 @@ public class GroupsApiController {
         groupMap.put("id", group.getId());
         groupMap.put("name", group.getName());
         groupMap.put("period", group.getPeriod());
+        groupMap.put("course", group.getCourse());
 
         List<Map<String, Object>> membersList = new ArrayList<>();
         List<Object[]> memberRows = groupsRepository.findGroupMembersRaw(group.getId());
@@ -165,7 +168,11 @@ public class GroupsApiController {
                 );
             }
 
-            Groups group = new Groups(dto.getName(), dto.getPeriod(), new ArrayList<>());
+            Groups group = new Groups();
+            group.setName(dto.getName());
+            group.setPeriod(dto.getPeriod());
+            group.setCourse(dto.getCourse());
+
             Groups savedGroup = groupsRepository.save(group);
 
             // Add members if provided
@@ -209,7 +216,11 @@ public class GroupsApiController {
 
             for (GroupCreateDto groupDto : dto.getGroups()) {
                 try {
-                    Groups group = new Groups(groupDto.getName(), groupDto.getPeriod(), new ArrayList<>());
+                    Groups group = new Groups();
+                    group.setName(groupDto.getName());
+                    group.setPeriod(groupDto.getPeriod());
+                    group.setCourse(groupDto.getCourse());
+
                     Groups savedGroup = groupsRepository.save(group);
 
                     if (groupDto.getMemberIds() != null) {
@@ -271,6 +282,10 @@ public class GroupsApiController {
             if (dto.getPeriod() != null) {
                 group.setPeriod(dto.getPeriod());
             }
+            if (dto.getCourse() != null) {
+                group.setCourse(dto.getCourse());
+            }
+
 
             Groups updatedGroup = groupsRepository.save(group);
             return new ResponseEntity<>(buildGroupResponse(updatedGroup), HttpStatus.OK);
