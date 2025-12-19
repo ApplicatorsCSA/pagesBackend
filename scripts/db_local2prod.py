@@ -20,6 +20,7 @@ LOCAL_URL = "http://localhost:8585"
 PROD_URL = "https://spring.opencodingsociety.com"
 PROD_LOGIN_URL = f"{PROD_URL}/login"
 PROD_IMPORT_URL = f"{PROD_URL}/api/imports/manual"
+LOCAL_LOGIN_URL = f"{LOCAL_URL}/login"
 LOCAL_EXPORT_URL = f"{LOCAL_URL}/api/exports/getAll"
 
 # Credentials
@@ -63,7 +64,30 @@ def export_local_database():
         sys.exit(1)
 
     try:
-        response = requests.get(LOCAL_EXPORT_URL, timeout=30)
+        # Authenticate to local server via form login to obtain session cookies
+        session = requests.Session()
+        auth_data = {
+            "username": ADMIN_UID,
+            "password": load_admin_password(),
+        }
+
+        auth_resp = session.post(LOCAL_LOGIN_URL, data=auth_data, timeout=10, allow_redirects=False)
+
+        if not (auth_resp.status_code == 302 and session.cookies):
+            # Fall back to clearer message if authentication failed
+            msg_preview = auth_resp.text[:200] if hasattr(auth_resp, "text") else ""
+            print(f" Error: Local authentication failed (HTTP {auth_resp.status_code}).")
+            print("   Ensure the credentials are correct and login form is enabled.")
+            if msg_preview:
+                print(f"   Response preview: {msg_preview}")
+            sys.exit(1)
+
+        # Use authenticated session to access protected export endpoint
+        response = session.get(LOCAL_EXPORT_URL, timeout=30)
+        if response.status_code == 401:
+            print(" Error: Unauthorized (401) when accessing local export endpoint.")
+            print("   This endpoint requires login; authentication may have failed.")
+            sys.exit(1)
         response.raise_for_status()
         data = response.json()
 
