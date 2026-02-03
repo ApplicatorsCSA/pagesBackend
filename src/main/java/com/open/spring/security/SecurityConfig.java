@@ -11,42 +11,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
-
-
-/*
- * THIS FILE IS IMPORTANT
- * 
- * API Security Configuration
- * 
- * This file configures security for all API endpoints (/api/**) and the JWT authentication endpoint (/authenticate).
- * It uses JWT token-based authentication with stateless sessions.
- * 
- * Key Configuration:
- * - Order(1): This filter chain is processed FIRST before MvcSecurityConfig
- * - Security Matcher: Only handles requests to /api/** and /authenticate
- * - Authentication: Uses JWT tokens via JwtRequestFilter
- * - CSRF: Disabled (standard for stateless JWT APIs)
- * - CORS: Enabled with custom headers for cross-origin requests
- * - Rate Limiting: Applied via RateLimitFilter to prevent abuse
- * 
- * Endpoint Access Levels:
- * - permitAll(): Anyone can access (e.g., /authenticate, /api/person/create)
- * - authenticated(): Requires valid JWT token (e.g., /api/people/**, /api/assets/**)
- * - hasAuthority("ROLE_ADMIN"): Requires admin role (e.g., DELETE /api/person/**)
- * - hasAnyAuthority(...): Requires one of the specified roles (e.g., /api/synergy/**)
- * 
- * IMPORTANT: 
- * - Always set authentication endpoints to permitAll() so users can login without being logged in
- * - Always set account creation endpoints to permitAll() so users can create accounts
- * - For MVC endpoint security (form-based login), see MvcSecurityConfig.java
- * 
- * Filter Chain Order:
- * 1. RateLimitFilter - Rate limiting
- * 2. JwtRequestFilter - JWT token validation
- * 3. Standard Spring Security filters
- */
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableMethodSecurity
@@ -66,106 +32,92 @@ public class SecurityConfig {
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
 
         http
-                .securityMatcher("/api/**", "/authenticate")
-                
-                .cors(Customizer.withDefaults())
+            .securityMatcher("/api/**", "/authenticate")
+            .cors(Customizer.withDefaults())
+            .csrf(csrf -> csrf.disable())
 
-                // JWT related configuration
-                .csrf(csrf -> csrf.disable())
-                // .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) OBSOLETE, OVERWRITTEN BY BELOW
-                .authorizeHttpRequests(auth -> auth
+            .authorizeHttpRequests(auth -> auth
 
-                        // ========== AUTHENTICATION & USER MANAGEMENT ==========
-                        // Public endpoints - no authentication required, support user login and account creation
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // Allow CORS preflight requests
-                        .requestMatchers(HttpMethod.POST, "/authenticate").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/person/create").permitAll()
-                        // Admin-only endpoints, beware of DELETE operations and impact to cascading relational data 
-                        .requestMatchers(HttpMethod.DELETE, "/api/person/**").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/person/**").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/person/uid/**").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                // ========= CORS =========
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // All other /api/person/** and /api/people/** operations handled by default rule
-                        // ======================================================
+                // ========= AUTH =========
+                .requestMatchers(HttpMethod.POST, "/authenticate").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/person/create").permitAll()
 
-                        // ========== PUBLIC API ENDPOINTS ==========
-                        // Intentionally public - used for polling and public features
-                        .requestMatchers("/api/jokes/**").permitAll()
-                        // Pause Menu APIs should be public
-                        .requestMatchers("/api/pausemenu/**").permitAll()
-                        // Leaderboard should be public - displays scores without authentication
-                        .requestMatchers("/api/leaderboard/**").permitAll()
-                        // Frontend calls gamer score endpoint; make it public
-                        .requestMatchers("/api/gamer/**").permitAll()
-                        // ==========================================
-                        .requestMatchers("/api/exports/**").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers("/api/imports/**").hasAuthority("ROLE_ADMIN")
-                        
-                        .requestMatchers("/api/content/**").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers("/api/collections/**").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers("/api/events/**").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        // ========== SYNERGY (ROLE-BASED ACCESS, Legacy system) ==========
-                        // Specific endpoint with student/teacher/admin access
-                        .requestMatchers(HttpMethod.POST, "/api/synergy/grades/requests").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/synergy/saigai/").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        // Teacher and admin access for other POST operations
-                        .requestMatchers(HttpMethod.POST, "/api/synergy/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        // Allow unauthenticated frontend/client requests to the AI preferences endpoint
-                        .requestMatchers(HttpMethod.POST, "/api/upai").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/upai/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/gemini-frq/grade").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/gemini-frq/grade/**").permitAll()
-                        // Admin access for certificates + quests
-                        .requestMatchers(HttpMethod.POST, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        
+                // ========= ASSIGNMENTS (OPEN – NO AUTH) =========
+                .requestMatchers("/api/assignments/**").permitAll()
+                .requestMatchers("/api/assignment-submissions/**").permitAll()
+                // ================================================
 
-                        .requestMatchers(HttpMethod.POST, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/user-certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/user-certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        // =================================================
+                // ========= PERSON =========
+                .requestMatchers(HttpMethod.DELETE, "/api/person/**").hasAuthority("ROLE_ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/person/**").hasAuthority("ROLE_ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/person/uid/**")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
 
-                        // ========== PUBLIC API ENDPOINTS (Legacy - TODO: Review for security) ==========
-                        // These endpoints are currently wide open - consider if they should require authentication
-                        .requestMatchers("/api/analytics/**").permitAll()
-                        .requestMatchers("/api/plant/**").permitAll()
-                        .requestMatchers("/api/groups/**").permitAll()
-                        .requestMatchers("/api/grade-prediction/**").permitAll()
-                        .requestMatchers("/api/admin-evaluation/**").permitAll()
-                        .requestMatchers("/api/grades/**").permitAll()
-                        .requestMatchers("/api/progress/**").permitAll()
-                        .requestMatchers("/api/calendar/**").permitAll()
-                        // Sprint dates - GET is public, POST/PUT/DELETE require auth
-                        .requestMatchers(HttpMethod.GET, "/api/sprint-dates/**").permitAll()
-                        // User preferences - requires authentication (handled by default rule)
-                        // ================================================================================
+                // ========= PUBLIC =========
+                .requestMatchers("/api/jokes/**").permitAll()
+                .requestMatchers("/api/pausemenu/**").permitAll()
+                .requestMatchers("/api/leaderboard/**").permitAll()
+                .requestMatchers("/api/gamer/**").permitAll()
+                .requestMatchers("/api/analytics/**").permitAll()
+                .requestMatchers("/api/plant/**").permitAll()
+                .requestMatchers("/api/groups/**").permitAll()
+                .requestMatchers("/api/grade-prediction/**").permitAll()
+                .requestMatchers("/api/admin-evaluation/**").permitAll()
+                .requestMatchers("/api/grades/**").permitAll()
+                .requestMatchers("/api/progress/**").permitAll()
+                .requestMatchers("/api/calendar/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/sprint-dates/**").permitAll()
 
-                        // ========== CHALLENGE SUBMISSION ==========
-                        // Code runner challenge submissions - requires authentication
-                        .requestMatchers(HttpMethod.POST, "/api/challenge-submission/**").authenticated()
-                        // ==========================================
+                // ========= CONTENT =========
+                .requestMatchers("/api/content/**")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers("/api/collections/**")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers("/api/events/**")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
 
-                        // ========== OCS ANALYTICS ==========
-                        // OCS Analytics endpoints - require authentication to associate data with user
-                        .requestMatchers("/api/ocs-analytics/**").authenticated()
-                        // ===================================
+                // ========= SYNERGY =========
+                .requestMatchers(HttpMethod.POST, "/api/synergy/grades/requests")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/synergy/saigai/")
+                    .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/synergy/**")
+                    .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
 
-                        // ========== DEFAULT: ALL OTHER API ENDPOINTS ==========
-                        // Secure by default - any endpoint not explicitly listed above requires authentication
-                        .requestMatchers("/api/**").authenticated()
-                        // ======================================================
-                       
-                )
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                // ========= AI / TOOLS =========
+                .requestMatchers(HttpMethod.POST, "/api/upai").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/upai/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/gemini-frq/grade").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/gemini-frq/grade/**").permitAll()
 
+                // ========= QUESTS / CERTS =========
+                .requestMatchers("/api/quests/**")
+                    .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers("/api/certificates/**")
+                    .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                .requestMatchers("/api/user-certificates/**")
+                    .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
 
-                // Session related configuration
-                .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(rateLimitFilter, JwtRequestFilter.class);
+                // ========= CHALLENGES =========
+                .requestMatchers(HttpMethod.POST, "/api/challenge-submission/**")
+                    .authenticated()
+
+                // ========= ANALYTICS =========
+                .requestMatchers("/api/ocs-analytics/**").authenticated()
+
+                // ========= DEFAULT =========
+                .requestMatchers("/api/**").authenticated()
+            )
+
+            .exceptionHandling(ex ->
+                ex.authenticationEntryPoint(jwtAuthenticationEntryPoint)
+            )
+
+            .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(rateLimitFilter, JwtRequestFilter.class);
 
         return http.build();
     }
@@ -181,9 +133,9 @@ public class SecurityConfig {
         configuration.addAllowedOriginPattern("https://spring.opencodingsociety.com");
         configuration.addAllowedHeader("*");
         configuration.addAllowedMethod("*");
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
 }
