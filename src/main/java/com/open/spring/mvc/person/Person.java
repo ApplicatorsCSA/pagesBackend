@@ -21,10 +21,12 @@ import jakarta.persistence.CascadeType;
 
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import jakarta.persistence.Convert;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.open.spring.mvc.assignments.AssignmentSubmission;
 import com.open.spring.mvc.bank.Bank;
 import com.open.spring.mvc.bathroom.Tinkle;
@@ -92,7 +94,7 @@ public class Person extends Submitter implements Comparable<Person> {
      */
 
     @NotEmpty
-    @JsonIgnore
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     @NotEmpty
@@ -149,6 +151,15 @@ public class Person extends Submitter implements Comparable<Person> {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Map<String, Object>> stats = new HashMap<>();
+
+    /**
+     * gradesJson stores this person's grades as a JSON blob in a TEXT column.
+     * Example entry: {"id":12345, "assignment":"hw1", "score":95.0, "course":"CS101", "submission":"..."}
+     * Persisted as TEXT to support SQLite; conversion handled by GradesJsonConverter.
+     */
+    @Convert(converter = GradesJsonConverter.class)
+    @Column(name = "gradesJson", columnDefinition = "text")
+    private List<Map<String, Object>> gradesJson = new ArrayList<>();
 
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -315,90 +326,94 @@ public class Person extends Submitter implements Comparable<Person> {
     public static Person[] init() {
         ArrayList<Person> people = new ArrayList<>();
         final Dotenv dotenv = Dotenv.load();
-        final String adminPassword = dotenv.get("ADMIN_PASSWORD");
-        final String defaultPassword = dotenv.get("DEFAULT_PASSWORD");
     
         // JSON-like list of person data using Map.ofEntries
         List<Map<String, Object>> personData = Arrays.asList(
+            // Admin user from .env
             Map.ofEntries(
-                Map.entry("name", "Thomas Edison"),
-                Map.entry("uid", "toby"),
-                Map.entry("email", "toby@gmail.com"),
-                Map.entry("password", adminPassword),
-                Map.entry("sid", "1"),
-                Map.entry("pfp", "/images/toby.png"),
-                Map.entry("kasmServerNeeded", true),
-                Map.entry("roles", Arrays.asList("ROLE_ADMIN", "ROLE_USER", "ROLE_TESTER", "ROLE_TEACHER")),
+                Map.entry("name", dotenv.get("ADMIN_NAME")),
+                Map.entry("uid", dotenv.get("ADMIN_UID")),
+                Map.entry("email", dotenv.get("ADMIN_EMAIL")),
+                Map.entry("password", dotenv.get("ADMIN_PASSWORD")),
+                Map.entry("sid", dotenv.get("ADMIN_SID")),
+                Map.entry("pfp", dotenv.get("ADMIN_PFP")),
+                Map.entry("kasmServerNeeded", false),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")),
                 Map.entry("stocks", "BTC,ETH")
             ),
+            // Teacher user from .env
+            Map.ofEntries(
+                Map.entry("name", dotenv.get("TEACHER_NAME")),
+                Map.entry("uid", dotenv.get("TEACHER_UID")),
+                Map.entry("email", dotenv.get("TEACHER_EMAIL")),
+                Map.entry("password", dotenv.get("TEACHER_PASSWORD")),
+                Map.entry("sid", dotenv.get("TEACHER_SID")),
+                Map.entry("pfp", dotenv.get("TEACHER_PFP")),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_TEACHER")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            // Default user from .env
+            Map.ofEntries(
+                Map.entry("name", dotenv.get("USER_NAME")),
+                Map.entry("uid", dotenv.get("USER_UID")),
+                Map.entry("email", dotenv.get("USER_EMAIL")),
+                Map.entry("password", dotenv.get("USER_PASSWORD")),
+                Map.entry("sid", dotenv.get("USER_SID")),
+                Map.entry("pfp", dotenv.get("USER_PFP")),
+                Map.entry("kasmServerNeeded", true),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("stocks", "BTC,ETH")
+            ),
+            // Alexander Graham Bell - hardcoded student user
             Map.ofEntries(
                 Map.entry("name", "Alexander Graham Bell"),
                 Map.entry("uid", "lex"),
                 Map.entry("email", "lexb@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "1"),
+                Map.entry("password", dotenv.get("DEFAULT_PASSWORD")),
+                Map.entry("sid", "9999991"),
                 Map.entry("pfp", "/images/lex.png"),
-                Map.entry("kasmServerNeeded", true),
+                Map.entry("kasmServerNeeded", false),
                 Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
                 Map.entry("stocks", "BTC,ETH")
             ),
-            Map.ofEntries(
-                Map.entry("name", "Nikola Tesla"),
-                Map.entry("uid", "niko"),
-                Map.entry("email", "niko@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "1"),
-                Map.entry("pfp", "/images/niko.png"),
-                Map.entry("kasmServerNeeded", true),
-                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
-                Map.entry("stocks", "BTC,ETH")
-            ),
+            // Madam Curie - hardcoded student user
             Map.ofEntries(
                 Map.entry("name", "Madam Curie"),
                 Map.entry("uid", "madam"),
                 Map.entry("email", "madam@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "1"),
+                Map.entry("password", dotenv.get("DEFAULT_PASSWORD")),
+                Map.entry("sid", "9999992"),
                 Map.entry("pfp", "/images/madam.png"),
-                Map.entry("kasmServerNeeded", true),
+                Map.entry("kasmServerNeeded", false),
                 Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
                 Map.entry("stocks", "BTC,ETH")
             ),
+            // My user - from .env
             Map.ofEntries(
-                Map.entry("name", "Grace Hopper"),
-                Map.entry("uid", "hop"),
-                Map.entry("email", "hop@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "123"),
-                Map.entry("pfp", "/images/hop.png"),
+                Map.entry("name", dotenv.get("MY_NAME")),
+                Map.entry("uid", dotenv.get("MY_UID")),
+                Map.entry("email", dotenv.get("MY_EMAIL")),
+                Map.entry("password", dotenv.get("DEFAULT_PASSWORD")),
+                Map.entry("sid", dotenv.get("MY_SID") != null ? dotenv.get("MY_SID") : "9999993"),
+                Map.entry("pfp", "/images/default.png"),
                 Map.entry("kasmServerNeeded", true),
-                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")),
                 Map.entry("stocks", "BTC,ETH")
             ),
-            Map.ofEntries(
-                Map.entry("name", "John Mortensen"),
-                Map.entry("uid", "jm1021"),
-                Map.entry("email", "jmort1021@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "1"),
-                Map.entry("pfp", "/images/jm1021.png"),
-                Map.entry("kasmServerNeeded", true),
-                Map.entry("roles", Arrays.asList("ROLE_ADMIN", "ROLE_TEACHER")),
-                Map.entry("stocks", "BTC,ETH")
-            ),
+            // Alan Turing - hardcoded student user 
             Map.ofEntries(
                 Map.entry("name", "Alan Turing"),
                 Map.entry("uid", "alan"),
                 Map.entry("email", "turing@gmail.com"),
-                Map.entry("password", defaultPassword),
-                Map.entry("sid", "2"),
+                Map.entry("password", dotenv.get("DEFAULT_PASSWORD")),
+                Map.entry("sid", "9999994"),
                 Map.entry("pfp", "/images/alan.png"),
                 Map.entry("kasmServerNeeded", false),
-                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_TESTER", "ROLE_STUDENT")),
+                Map.entry("roles", Arrays.asList("ROLE_USER", "ROLE_STUDENT")),
                 Map.entry("stocks", "BTC,ETH")
             )
         );
-    
         // Iterate over the JSON-like list to create Person objects
         for (Map<String, Object> data : personData) {
             Person person = createPerson(

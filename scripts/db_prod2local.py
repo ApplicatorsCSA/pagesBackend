@@ -436,7 +436,7 @@ def get_user_confirmation():
         print("FORCE_YES detected, proceeding automatically...")
         return True
     
-    print("WARNING: You are about to lose all data in the database!")
+    print("WARNING: You are about to lose all data in your local sqlite database!")
     print("WARNING: This operation will:")
     print("   - Backup the current database")
     print("   - Drop all existing tables")

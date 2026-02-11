@@ -1,7 +1,9 @@
 package com.open.spring.mvc.grades;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -12,144 +14,157 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.open.spring.mvc.person.PersonJpaRepository;
 
 @RestController
 @RequestMapping("/api/grades")
 public class GradeController {
 
     @Autowired
-    private GradeRepository gradeRepository;
-
-    // --- NEW ---
-    @Autowired
-    private GraderModuleRepository graderModuleRepository;
-
-    // --- NEW: DTO for dashboard cards ---
-    public static class ModuleCardDto {
-        public String assignment;
-        public long totalSubmissions;
-        public long gradedCount;
-        public long pendingCount;
-
-        public ModuleCardDto(String assignment, long totalSubmissions, long gradedCount, long pendingCount) {
-            this.assignment = assignment;
-            this.totalSubmissions = totalSubmissions;
-            this.gradedCount = gradedCount;
-            this.pendingCount = pendingCount;
-        }
-    }
-    // --- END NEW DTO ---
+    private PersonJpaRepository personRepository;
 
     @GetMapping
     public List<Grade> getAllGrades() {
-        return gradeRepository.findAll();
+        List<Grade> out = new ArrayList<>();
+        for (com.open.spring.mvc.person.Person p : personRepository.findAll()) {
+            List<Map<String, Object>> gjs = p.getGradesJson();
+            if (gjs == null) continue;
+            for (Map<String, Object> m : gjs) {
+                Grade g = mapToGrade(m);
+                if (g.getUid() == null) g.setUid(p.getUid());
+                out.add(g);
+            }
+        }
+        return out;
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Grade> getGradeById(@PathVariable Long id) {
-        Optional<Grade> grade = gradeRepository.findById(id);
-        return grade.map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+        for (com.open.spring.mvc.person.Person p : personRepository.findAll()) {
+            List<Map<String, Object>> gjs = p.getGradesJson();
+            if (gjs == null) continue;
+            for (Map<String, Object> m : gjs) {
+                Object mid = m.get("id");
+                if (mid != null && Long.valueOf(String.valueOf(mid)).equals(id)) {
+                    Grade g = mapToGrade(m);
+                    if (g.getUid() == null) g.setUid(p.getUid());
+                    return ResponseEntity.ok(g);
+                }
+            }
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/student/{uid}")
     public List<Grade> getGradesByStudent(@PathVariable String uid) {
-        return gradeRepository.findByUid(uid);
+        com.open.spring.mvc.person.Person p = personRepository.findByUid(uid);
+        List<Grade> out = new ArrayList<>();
+        if (p == null) return out;
+        List<Map<String, Object>> gjs = p.getGradesJson();
+        if (gjs == null) return out;
+        for (Map<String, Object> m : gjs) {
+            Grade g = mapToGrade(m);
+            if (g.getUid() == null) g.setUid(uid);
+            out.add(g);
+        }
+        return out;
     }
 
     @GetMapping("/assignment/{assignment}")
     public List<Grade> getGradesByAssignment(@PathVariable String assignment) {
-        return gradeRepository.findByAssignment(assignment);
+        List<Grade> out = new ArrayList<>();
+        for (com.open.spring.mvc.person.Person p : personRepository.findAll()) {
+            List<Map<String, Object>> gjs = p.getGradesJson();
+            if (gjs == null) continue;
+            for (Map<String, Object> m : gjs) {
+                Object asg = m.get("assignment");
+                if (assignment.equals(String.valueOf(asg))) {
+                    Grade g = mapToGrade(m);
+                    if (g.getUid() == null) g.setUid(p.getUid());
+                    out.add(g);
+                }
+            }
+        }
+        return out;
     }
 
     @PostMapping
     public Grade createGrade(@RequestBody Grade grade) {
-        return gradeRepository.save(grade);
+        com.open.spring.mvc.person.Person p = personRepository.findByUid(grade.getUid());
+        if (p == null) return null;
+        Map<String, Object> m = new HashMap<>();
+        m.put("assignment", grade.getAssignment());
+        m.put("score", grade.getScore());
+        m.put("teacherComments", grade.getTeacherComments());
+        m.put("submission", grade.getSubmission());
+        if (p.getGradesJson() == null) {
+            p.setGradesJson(new ArrayList<>());
+        }
+        p.getGradesJson().add(m);
+        personRepository.save(p);
+        return grade;
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Grade> updateGrade(@PathVariable Long id, @RequestBody Grade gradeDetails) {
-        Optional<Grade> optionalGrade = gradeRepository.findById(id);
-        if (optionalGrade.isPresent()) {
-            Grade grade = optionalGrade.get();
-            grade.setUid(gradeDetails.getUid());
-            grade.setAssignment(gradeDetails.getAssignment());
-            grade.setScore(gradeDetails.getScore());
-            grade.setCourse(gradeDetails.getCourse());
-            // grade.setGradeLevel(gradeDetails.getGradeLevel());
-            return ResponseEntity.ok(gradeRepository.save(grade));
+        for (com.open.spring.mvc.person.Person p : personRepository.findAll()) {
+            List<Map<String, Object>> gjs = p.getGradesJson();
+            if (gjs == null) continue;
+            for (Map<String, Object> m : gjs) {
+                Object mid = m.get("id");
+                if (mid != null && Long.valueOf(String.valueOf(mid)).equals(id)) {
+                    m.put("assignment", gradeDetails.getAssignment());
+                    m.put("score", gradeDetails.getScore());
+                    m.put("teacherComments", gradeDetails.getTeacherComments());
+                    m.put("submission", gradeDetails.getSubmission());
+                    personRepository.save(p);
+                    Grade g = mapToGrade(m);
+                    if (g.getUid() == null) g.setUid(p.getUid());
+                    return ResponseEntity.ok(g);
+                }
+            }
         }
         return ResponseEntity.notFound().build();
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteGrade(@PathVariable Long id) {
-        if (gradeRepository.existsById(id)) {
-            gradeRepository.deleteById(id);
-            return ResponseEntity.ok().build();
+        for (com.open.spring.mvc.person.Person p : personRepository.findAll()) {
+            List<Map<String, Object>> gjs = p.getGradesJson();
+            if (gjs == null) continue;
+            boolean removed = gjs.removeIf(m -> {
+                Object mid = m.get("id");
+                return mid != null && Long.valueOf(String.valueOf(mid)).equals(id);
+            });
+            if (removed) {
+                personRepository.save(p);
+                return ResponseEntity.ok().build();
+            }
         }
         return ResponseEntity.notFound().build();
     }
 
-
-    // -------------------------------------------------------------------------
-    // --- NEW: Grader-module endpoints ----------------------------------------
-    // -------------------------------------------------------------------------
-
-    // --- NEW ---
-    // Grader selects a module (assignment) to grade
-    @PostMapping("/modules/signup")
-    public ResponseEntity<?> signupForModule(
-            @RequestParam String graderId,
-            @RequestParam String assignment) {
-
-        if (graderModuleRepository.existsByGraderIdAndAssignment(graderId, assignment)) {
-            return ResponseEntity.badRequest().body("Already signed up for this module");
+    private Grade mapToGrade(Map<String, Object> m) {
+        if (m == null) return null;
+        Object idObj = m.get("id");
+        Long id = idObj == null ? null : Long.valueOf(String.valueOf(idObj));
+        String uid = (String) m.get("uid");
+        String assignment = m.get("assignment") == null ? null : String.valueOf(m.get("assignment"));
+        Double score = null;
+        Object scoreObj = m.get("score");
+        if (scoreObj != null) {
+            try {
+                score = Double.valueOf(String.valueOf(scoreObj));
+            } catch (NumberFormatException e) {
+                score = null;
+            }
         }
-
-        GraderModule gm = new GraderModule(graderId, assignment);
-        graderModuleRepository.save(gm);
-
-        return ResponseEntity.ok("Signup successful");
+        String teacherComments = m.get("teacherComments") == null ? null : String.valueOf(m.get("teacherComments"));
+        String submission = m.get("submission") == null ? null : String.valueOf(m.get("submission"));
+        Grade g = new Grade(uid, assignment, score, teacherComments, submission);
+        g.setId(id);
+        return g;
     }
-    // --- END NEW ---
-
-
-    // --- NEW ---
-    // Dashboard showing all modules this grader is assigned to
-    @GetMapping("/modules/dashboard")
-    public ResponseEntity<List<ModuleCardDto>> getDashboard(@RequestParam String graderId) {
-
-        List<GraderModule> modules = graderModuleRepository.findByGraderId(graderId);
-
-        List<ModuleCardDto> cards = modules.stream().map(m -> {
-            String assignment = m.getAssignment();
-
-            List<Grade> gradesForModule = gradeRepository.findByAssignment(assignment);
-
-            long total = gradesForModule.size();
-            long graded = gradesForModule.stream()
-                    .filter(g -> g.getScore() != null)
-                    .count();
-            long pending = total - graded;
-
-            return new ModuleCardDto(assignment, total, graded, pending);
-        }).toList();
-
-        return ResponseEntity.ok(cards);
-    }
-    // --- END NEW ---
-
-
-    // --- NEW ---
-    // View all submissions for a module (used by the grading UI)
-    @GetMapping("/modules/{assignment}")
-    public ResponseEntity<List<Grade>> getGradesForModule(@PathVariable String assignment) {
-
-        List<Grade> grades = gradeRepository.findByAssignment(assignment);
-        return ResponseEntity.ok(grades);
-    }
-    // --- END NEW ---
-
 }

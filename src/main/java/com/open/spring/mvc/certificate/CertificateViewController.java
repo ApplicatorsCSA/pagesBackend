@@ -36,7 +36,7 @@ public class CertificateViewController {
     }
 
     @PostMapping("/create")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public String createCertificate(@RequestParam String title, @RequestParam(required = false) Long[] questIds) {
         Certificate newCertificate = new Certificate();
         newCertificate.setTitle(title);
@@ -49,7 +49,7 @@ public class CertificateViewController {
     }
 
     @PostMapping("/delete/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public String deleteCertificate(@PathVariable Long id) {
         // First, delete associated user certificates
         List<UserCertificate> userCertificates = userCertificateRepository.findByCertificateId(id);

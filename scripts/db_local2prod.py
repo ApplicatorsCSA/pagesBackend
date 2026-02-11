@@ -4,7 +4,7 @@
 db_restore-local2prod.py
 Uploads local database to production server
 
-Usage:
+Usages:
     python3 scripts/db_restore-local2prod.py
 """
 

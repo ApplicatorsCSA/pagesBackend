@@ -114,8 +114,35 @@ public class AssignmentsApiController {
     }
 
     /**
+     * Sample data returned when no assignments exist in the database (for table display).
+     */
+    private static List<Map<String, String>> sampleAssignments() {
+        List<Map<String, String>> sample = new ArrayList<>();
+        String[][] rows = {
+            { "1", "Assignment 1", "Class Homework", "Unit 1 Homework", "10/25/2024", "100", "2024-10-01 09:00:00" },
+            { "2", "Sprint 1 Live Review", "Live Review", "The final review for sprint 1", "11/02/2024", "50", "2024-10-15 14:00:00" },
+            { "3", "Quiz - Chapter 2", "Quiz", "Multiple choice and short answer on Chapter 2", "10/30/2024", "25", "2024-10-20 10:00:00" },
+            { "4", "Project Proposal", "Project", "Submit your project proposal and team members", "11/15/2024", "10", "2024-11-01 23:59:00" },
+            { "5", "Seed", "Seed", "The student's seed grade", "11/02/2080", "1", "2024-09-01 00:00:00" },
+        };
+        for (String[] row : rows) {
+            Map<String, String> map = new HashMap<>();
+            map.put("id", row[0]);
+            map.put("name", row[1]);
+            map.put("type", row[2]);
+            map.put("description", row[3]);
+            map.put("dueDate", row[4]);
+            map.put("points", row[5]);
+            map.put("timestamp", row[6]);
+            sample.add(map);
+        }
+        return sample;
+    }
+
+    /**
      * A GET endpoint to retrieve all the assignments.
-     * @return A list of all the assignments.
+     * Returns sample data when the database has no assignments (for table display).
+     * @return A list of all the assignments, or sample data if empty.
      */
     @Transactional
     @GetMapping("/")
@@ -130,7 +157,11 @@ public class AssignmentsApiController {
             map.put("dueDate", a.getDueDate());
             map.put("points", String.valueOf(a.getPoints()));
             map.put("type", a.getType());
+            map.put("timestamp", a.getTimestamp() != null ? a.getTimestamp() : "");
             simple.add(map);
+        }
+        if (simple.isEmpty()) {
+            simple = sampleAssignments();
         }
         return new ResponseEntity<>(simple, HttpStatus.OK);
     }

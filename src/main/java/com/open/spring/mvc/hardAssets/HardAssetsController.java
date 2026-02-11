@@ -65,18 +65,32 @@ public class HardAssetsController {
             String uid = userDetails.getUsername();
             System.out.println("Extracted UID: " + uid);
 
-            // Create the upload directory if it doesn't exist
-            Path uploadPath = Paths.get(UPLOAD_DIR);
+            // Prevent path traversal attacks and create directory
+            Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
-
-            String fileName = file.getOriginalFilename();
-            String localFileUUID = java.util.UUID.randomUUID().toString() + "_" + fileName;
-            Path filePath = Paths.get(UPLOAD_DIR + localFileUUID);
+            
+            String originalFilename = file.getOriginalFilename();
+            // Extract basename to strip any path components
+            String baseName = Paths.get(originalFilename).getFileName().toString();
+            
+            // Reject filenames containing traversal patterns
+            if (baseName.contains("..") || baseName.contains("/") || baseName.contains("\\")) {
+                return new ResponseEntity<>("Invalid file name.", HttpStatus.BAD_REQUEST);
+            }
+            
+            // Resolve and verify final path stays within uploads directory
+            String localFileUUID = java.util.UUID.randomUUID().toString() + "_" + baseName;
+            Path filePath = uploadPath.resolve(localFileUUID).normalize();
+            
+            if (!filePath.startsWith(uploadPath)) {
+                return new ResponseEntity<>("Invalid target path.", HttpStatus.BAD_REQUEST);
+            }
+            
             Files.copy(file.getInputStream(), filePath);
 
-            HardAsset newAsset = new HardAsset(fileName, localFileUUID, uid);
+            HardAsset newAsset = new HardAsset(originalFilename, localFileUUID, uid);
             repository.save(newAsset);
             System.out.println("File uploaded and saved to database: " + localFileUUID);
             return new ResponseEntity<>("Successfully uploaded and saved '" + localFileUUID + "'", HttpStatus.OK);

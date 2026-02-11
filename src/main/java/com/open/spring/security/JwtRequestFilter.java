@@ -99,6 +99,12 @@ public class JwtRequestFilter extends OncePerRequestFilter {
 	 */
 	@Override
 	protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain) throws ServletException, IOException {
+		// Skip JWT validation for authentication endpoint
+		if ("/authenticate".equals(request.getRequestURI())) {
+			chain.doFilter(request, response);
+			return;
+		}
+
 		String origin = request.getHeader("X-Origin");
 		
 		// If the request is coming from the client api

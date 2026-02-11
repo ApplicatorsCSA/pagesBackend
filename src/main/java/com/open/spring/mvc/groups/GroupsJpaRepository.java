@@ -41,4 +41,12 @@ public interface GroupsJpaRepository extends JpaRepository<Groups, Long> {
                    "WHERE gm.group_id = :groupId " +
                    "ORDER BY p.id", nativeQuery = true)
     List<Object[]> findGroupMembersRaw(@Param("groupId") Long groupId);
+
+    // Search groups by name (case-insensitive, partial match)
+    @Query("SELECT g FROM Groups g WHERE LOWER(g.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) ORDER BY g.name")
+    List<Groups> searchByName(@Param("searchTerm") String searchTerm);
+
+    // Search groups by name with members eagerly loaded
+    @Query("SELECT DISTINCT g FROM Groups g LEFT JOIN FETCH g.groupMembers WHERE LOWER(g.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) ORDER BY g.name")
+    List<Groups> searchByNameWithMembers(@Param("searchTerm") String searchTerm);
 }

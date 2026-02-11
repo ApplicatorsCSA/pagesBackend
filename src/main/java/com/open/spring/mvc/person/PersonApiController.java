@@ -105,6 +105,22 @@ public class PersonApiController {
     }
 
     /**
+     * Retrieves a Person entity by its UID.
+     *
+     * @param uid The UID of the Person entity to retrieve.
+     * @return A ResponseEntity containing the Person entity if found, or a
+     *         NOT_FOUND status if not found.
+     */
+    @GetMapping("/person/uid/{uid}")
+    public ResponseEntity<Person> getPersonByUid(@PathVariable String uid) {
+        Person person = repository.findByUid(uid);
+        if (person != null) {
+            return new ResponseEntity<>(person, HttpStatus.OK);
+        }
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    }
+
+    /**
      * Delete a Person entity by its ID.
      *
      * @param id The ID of the Person entity to delete.

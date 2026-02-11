@@ -40,7 +40,7 @@ public class PersonDetailsService implements UserDetailsService {  // "implement
     public UserDetails loadUserByUsername(String uid) throws UsernameNotFoundException {
         Person person = personJpaRepository.findByUid(uid); // setting variable user equal to the method finding the username in the database
         if (person == null) {
-			throw new UsernameNotFoundException("User not found with username: " + uid);
+		    throw new UsernameNotFoundException("User not found with username: " + uid);
         }
         Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
         person.getRoles().forEach(role -> { //loop through roles

@@ -12,4 +12,5 @@ public interface CalendarEventRepository extends JpaRepository<CalendarEvent, Lo
     List<CalendarEvent> findByDateBetween(LocalDate startDate, LocalDate endDate); // Method to find all calendar events between dates
     List<CalendarEvent> findAll();
     Optional<CalendarEvent> findByTitle(String title); // Optional is fine here
+    Optional<CalendarEvent> findByTitleAndDate(String title, LocalDate date); // Find duplicate by title and date
 }

@@ -14,9 +14,9 @@ public class GradeTest {
         grade.setUid(uid);
         assertEquals(uid, grade.getUid(), "getUid should return set uid");
 
-        // Test course field
-        String course = "CSA";
-        grade.setCourse(course);
-        assertEquals(course, grade.getCourse(), "getCourse should return set course");
+        // Test teacherComments field
+        String teacherComments = "CSA";
+        grade.setTeacherComments(teacherComments);
+        assertEquals(teacherComments, grade.getTeacherComments(), "getTeacherComments should return set teacherComments");
     }
 }

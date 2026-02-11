@@ -1,64 +1,31 @@
 package com.open.spring.security;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.header.writers.StaticHeadersWriter;
-
-/*
- * THIS FILE IS IMPORTANT
- * 
- * API Security Configuration
- * 
- * This file configures security for all API endpoints (/api/**) and the JWT authentication endpoint (/authenticate).
- * It uses JWT token-based authentication with stateless sessions.
- * 
- * Key Configuration:
- * - Order(1): This filter chain is processed FIRST before MvcSecurityConfig
- * - Security Matcher: Only handles requests to /api/** and /authenticate
- * - Authentication: Uses JWT tokens via JwtRequestFilter
- * - CSRF: Disabled (standard for stateless JWT APIs)
- * - CORS: Enabled with custom headers for cross-origin requests
- * - Rate Limiting: Applied via RateLimitFilter to prevent abuse
- * 
- * Endpoint Access Levels:
- * - permitAll(): Anyone can access (e.g., /authenticate, /api/person/create)
- * - authenticated(): Requires valid JWT token (e.g., /api/people/**, /api/assets/**)
- * - hasAuthority("ROLE_ADMIN"): Requires admin role (e.g., DELETE /api/person/**)
- * - hasAnyAuthority(...): Requires one of the specified roles (e.g., /api/synergy/**)
- * 
- * IMPORTANT: 
- * - Always set authentication endpoints to permitAll() so users can login without being logged in
- * - Always set account creation endpoints to permitAll() so users can create accounts
- * - For MVC endpoint security (form-based login), see MvcSecurityConfig.java
- * 
- * Filter Chain Order:
- * 1. RateLimitFilter - Rate limiting
- * 2. JwtRequestFilter - JWT token validation
- * 3. Standard Spring Security filters
- */
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    private final JwtRequestFilter jwtRequestFilter;
+    @Autowired
+    private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
-    // Inject the RateLimitFilter
-    private final RateLimitFilter rateLimitFilter;
+    @Autowired
+    private JwtRequestFilter jwtRequestFilter;
 
-    public SecurityConfig(JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-                          JwtRequestFilter jwtRequestFilter,
-                          RateLimitFilter rateLimitFilter) {
-        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
-        this.jwtRequestFilter = jwtRequestFilter;
-        this.rateLimitFilter = rateLimitFilter; 
-    }
+    @Autowired
+    private RateLimitFilter rateLimitFilter;
 
     @Bean
     @Order(1)
@@ -66,47 +33,36 @@ public class SecurityConfig {
 
         http
                 .securityMatcher("/api/**", "/authenticate")
-                // JWT related configuration
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
-                // .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) OBSOLETE, OVERWRITTEN BY BELOW
+
                 .authorizeHttpRequests(auth -> auth
 
-                        // ========== AUTHENTICATION & USER MANAGEMENT ==========
-                        // Public endpoints - no authentication required, support user login and account creation
+                        // ========= CORS =========
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // ========= AUTH =========
                         .requestMatchers(HttpMethod.POST, "/authenticate").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/person/create").permitAll()
-                        // Admin-only endpoints, beware of DELETE operations and impact to cascading relational data 
+
+                        // ========= ASSIGNMENTS (OPEN – NO AUTH) =========
+                        .requestMatchers("/api/assignments/**").permitAll()
+                        .requestMatchers("/api/assignment-submissions/**").permitAll()
+                        // ================================================
+
+                        // ========= PERSON =========
                         .requestMatchers(HttpMethod.DELETE, "/api/person/**").hasAuthority("ROLE_ADMIN")
-                        // All other /api/person/** and /api/people/** operations handled by default rule
-                        // ======================================================
+                        .requestMatchers(HttpMethod.PUT, "/api/person/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/person/uid/**")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
 
-                        // ========== PUBLIC API ENDPOINTS ==========
-                        // Intentionally public - used for polling and public features
+                        // ========= PUBLIC =========
                         .requestMatchers("/api/jokes/**").permitAll()
-                        // ==========================================
-                        .requestMatchers("/api/exports/**").hasAuthority("ROLE_ADMIN")
-                        .requestMatchers("/api/imports/**").hasAuthority("ROLE_ADMIN")
-                        // ========== SYNERGY (ROLE-BASED ACCESS, Legacy system) ==========
-                        // Specific endpoint with student/teacher/admin access
-                        .requestMatchers(HttpMethod.POST, "/api/synergy/grades/requests").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/synergy/saigai/").hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
-                        // Teacher and admin access for other POST operations
-                        .requestMatchers(HttpMethod.POST, "/api/synergy/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        // Admin access for certificates + quests
-                        .requestMatchers(HttpMethod.POST, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/quests/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        
-
-                        .requestMatchers(HttpMethod.POST, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/user-certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/user-certificates/**").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                        // =================================================
-
-                        // ========== PUBLIC API ENDPOINTS (Legacy - TODO: Review for security) ==========
-                        // These endpoints are currently wide open - consider if they should require authentication
+                        .requestMatchers("/api/bank/**").permitAll()
+                        .requestMatchers("/api/quant/**").permitAll()
+                        .requestMatchers("/api/pausemenu/**").permitAll()
+                        .requestMatchers("/api/leaderboard/**").permitAll()
+                        .requestMatchers("/api/gamer/**").permitAll()
                         .requestMatchers("/api/analytics/**").permitAll()
                         .requestMatchers("/api/plant/**").permitAll()
                         .requestMatchers("/api/groups/**").permitAll()
@@ -115,32 +71,70 @@ public class SecurityConfig {
                         .requestMatchers("/api/grades/**").permitAll()
                         .requestMatchers("/api/progress/**").permitAll()
                         .requestMatchers("/api/calendar/**").permitAll()
-                        // ================================================================================
+                        .requestMatchers(HttpMethod.GET, "/api/sprint-dates/**").permitAll()
 
-                        // ========== DEFAULT: ALL OTHER API ENDPOINTS ==========
-                        // Secure by default - any endpoint not explicitly listed above requires authentication
-                        .requestMatchers("/api/**").authenticated()
-                        // ======================================================
-                       
-                )
-                .cors(Customizer.withDefaults())
-                .headers(headers -> headers
-                        .addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Credentials", "true"))
-                        .addHeaderWriter(
-                                new StaticHeadersWriter("Access-Control-Allow-ExposedHeaders", "*", "Authorization"))
-                        .addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Headers", "Content-Type",
-                                "Authorization", "x-csrf-token"))
-                        .addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-MaxAge", "600"))
-                        .addHeaderWriter(new StaticHeadersWriter("Access-Control-Allow-Methods", "POST", "GET",
-                                "PUT", "DELETE", "OPTIONS", "HEAD")))
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                        // ========= CONTENT =========
+                        .requestMatchers("/api/content/**")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers("/api/collections/**")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers("/api/events/**")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
 
+                        // ========= SYNERGY =========
+                        .requestMatchers(HttpMethod.POST, "/api/synergy/grades/requests")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/synergy/saigai/")
+                        .hasAnyAuthority("ROLE_STUDENT", "ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/synergy/**")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
 
-                // Session related configuration
+                        // ========= AI / TOOLS =========
+                        .requestMatchers(HttpMethod.POST, "/api/upai").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/upai/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/gemini-frq/grade").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/gemini-frq/grade/**").permitAll()
+
+                        // ========= QUESTS / CERTS =========
+                        .requestMatchers("/api/quests/**")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers("/api/certificates/**")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers("/api/user-certificates/**")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+
+                        // ========= CHALLENGES =========
+                        .requestMatchers(HttpMethod.POST, "/api/challenge-submission/**")
+                        .authenticated()
+
+                        // ========= ANALYTICS =========
+                        .requestMatchers("/api/ocs-analytics/**").authenticated()
+
+                        // ========= DEFAULT =========
+                        .requestMatchers("/api/**").authenticated())
+
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(rateLimitFilter, JwtRequestFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowCredentials(true);
+        configuration.addAllowedOriginPattern("http://localhost:4500");
+        configuration.addAllowedOriginPattern("https://opencodingsociety.com");
+        configuration.addAllowedOriginPattern("http://opencodingsociety.com");
+        configuration.addAllowedOriginPattern("https://pages.opencodingsociety.com");
+        configuration.addAllowedOriginPattern("https://spring.opencodingsociety.com");
+        configuration.addAllowedHeader("*");
+        configuration.addAllowedMethod("*");
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 }

@@ -40,49 +40,53 @@ public class MvcSecurityConfig {
     public SecurityFilterChain mvcSecurityFilterChain(HttpSecurity http) throws Exception {
 
         http
-            // Everything that is NOT handled by the API chain
-            .securityMatcher("/**")
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/mvc/person/search/**").authenticated()
-                .requestMatchers("/mvc/person/create/**").permitAll()
-                .requestMatchers("/mvc/person/reset/**").permitAll()
-                .requestMatchers("/mvc/person/read/**").authenticated()
-                .requestMatchers("/mvc/person/cookie-clicker").authenticated()
-                .requestMatchers(HttpMethod.GET,"/mvc/person/update/user").authenticated()
-                .requestMatchers(HttpMethod.GET,"/mvc/person/update/**").authenticated()
-                .requestMatchers(HttpMethod.POST,"/mvc/person/update/").authenticated()
-                .requestMatchers(HttpMethod.POST,"/mvc/person/update/role").hasAuthority("ROLE_ADMIN")
-                .requestMatchers(HttpMethod.POST,"/mvc/person/update/roles").hasAuthority("ROLE_ADMIN")
-                .requestMatchers("/mvc/person/delete/**").hasAuthority("ROLE_ADMIN")
-                .requestMatchers("/mvc/bathroom/**").authenticated()
-                .requestMatchers(HttpMethod.GET, "/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/authenticateForm").permitAll()
-                .requestMatchers("/mvc/synergy/**").authenticated()
-                .requestMatchers(HttpMethod.GET, "/mvc/synergy/gradebook").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN", "ROLE_STUDENT")
-                .requestMatchers(HttpMethod.GET, "/mvc/synergy/view-grade-requests").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                .requestMatchers(HttpMethod.GET, "/mvc/assignments/tracker").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                .requestMatchers(HttpMethod.GET, "/mvc/teamteach/teachergrading").hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
-                .requestMatchers(HttpMethod.GET,"/mvc/train/**").authenticated()
-                .requestMatchers(HttpMethod.GET,"/mvc/extract/**").hasAuthority("ROLE_ADMIN")
-                .requestMatchers(HttpMethod.POST,"/mvc/extract/**").hasAuthority("ROLE_ADMIN")
-                .requestMatchers(HttpMethod.POST,"/mvc/import/**").hasAuthority("ROLE_ADMIN")
-                .requestMatchers("/mvc/grades/**").hasAuthority("ROLE_ADMIN")
-                .requestMatchers("/mvc/assignments/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
-                .requestMatchers("/mvc/bank/read").hasAuthority("ROLE_ADMIN")
-                .requestMatchers("/mvc/progress/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
+                // Everything that is NOT handled by the API chain
+                .securityMatcher("/**")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/mvc/person/search/**").authenticated()
+                        .requestMatchers("/mvc/person/create/**").permitAll()
+                        .requestMatchers("/mvc/person/reset/**").permitAll()
+                        .requestMatchers("/mvc/person/read/**").authenticated()
+                        .requestMatchers("/mvc/person/cookie-clicker").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/mvc/person/update/user").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/mvc/person/update/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/mvc/person/update/").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/mvc/person/update/role").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/mvc/person/update/roles").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/mvc/person/delete/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/mvc/bathroom/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/authenticateForm").permitAll()
+                        .requestMatchers("/mvc/synergy/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/mvc/synergy/gradebook")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN", "ROLE_STUDENT")
+                        .requestMatchers(HttpMethod.GET, "/mvc/synergy/view-grade-requests")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/mvc/assignments/tracker")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/mvc/teamteach/teachergrading")
+                        .hasAnyAuthority("ROLE_TEACHER", "ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/mvc/train/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/mvc/extract/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/mvc/extract/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/mvc/import/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/mvc/grades/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/mvc/assignments/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
+                        .requestMatchers("/mvc/bank/read").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/bank/**").permitAll()
+                        .requestMatchers("/mvc/progress/read").hasAnyAuthority("ROLE_ADMIN", "ROLE_TEACHER")
 
-                // Fallback ---------------------------------------------------
-                .requestMatchers("/**").permitAll()
-            )
-            .formLogin(form -> form
-                .loginPage("/login")
-                .defaultSuccessUrl("/mvc/person/read"))
-            .logout(logout -> logout
-                .deleteCookies("sess_java_spring")
-                .logoutSuccessUrl("/"));
+                        // Fallback ---------------------------------------------------
+                        .requestMatchers("/**").permitAll())
+                .formLogin(form -> form
+                        .loginPage("/login")
+                        .defaultSuccessUrl("/mvc/person/read"))
+                .logout(logout -> logout
+                        .deleteCookies("sess_java_spring")
+                        .logoutSuccessUrl("/"));
 
         return http.build();
     }

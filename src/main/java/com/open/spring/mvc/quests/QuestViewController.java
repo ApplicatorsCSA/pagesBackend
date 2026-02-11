@@ -27,7 +27,7 @@ public class QuestViewController {
     }
 
     @PostMapping("/create")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public String createQuest(@RequestParam String name, @RequestParam Quest.Difficulty difficulty, @RequestParam String permalink, @RequestParam Integer totalSubmodules, @RequestParam Integer rewardPoints) {
         Quest newQuest = new Quest(name, difficulty, permalink, totalSubmodules, rewardPoints);
         questRepository.save(newQuest);
@@ -35,7 +35,7 @@ public class QuestViewController {
     }
 
     @PostMapping("/delete/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public String deleteQuest(@PathVariable Long id) {
         questRepository.deleteById(id);
         return "redirect:/mvc/quests";

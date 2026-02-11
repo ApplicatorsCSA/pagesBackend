@@ -44,6 +44,14 @@ public class GroupsDetailsService {  // "implements" ties ModelRepo to Spring Se
         return groupsJpaRepository.findGroupsByPersonIdWithMembers(personId);
     }
 
+    public List<Groups> searchByName(String searchTerm) {
+        return groupsJpaRepository.searchByName(searchTerm);
+    }
+
+    public List<Groups> searchByNameWithMembers(String searchTerm) {
+        return groupsJpaRepository.searchByNameWithMembers(searchTerm);
+    }
+
     public void delete(long id) {
         groupsJpaRepository.deleteById(id);
     }

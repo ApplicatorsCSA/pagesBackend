@@ -148,7 +148,7 @@ public class TinkleApiController {
      * Requires the requester to be an admin (checked via request attribute).
      */
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PostMapping("/bulk/clear")
     public ResponseEntity<?> clearTable(HttpServletRequest request) {
         try {

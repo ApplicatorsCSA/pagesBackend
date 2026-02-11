@@ -82,11 +82,71 @@ socket.port=8589
 
 ## .env files
 
-- In order to run this project locally, a .env file should be set up with the appropriate variables:
-- GAMIFY_API_URL=
-- GAMIFY_API_KEY= 
-- ADMIN_PASSWORD=123Toby!
-- DEFAULT_PASSWORD=123Qwerty!
+The `.env` file provides local environment-specific configuration that overrides `application.properties`. This file is excluded from git (via `.gitignore`) to prevent committing sensitive credentials and local settings.
+
+**How it works:**
+- Spring Boot loads `application.properties` first (production defaults)
+- Then imports `.env` which overrides those values
+- Properties in `.env` take precedence over `application.properties`
+
+**Required .env setup for local development:**
+
+```bash
+# Default password and reset passwor
+DEFAULT_PASSWORD=123Qwerty!
+
+# Admin user defaults
+ADMIN_NAME=Thomas Edison
+ADMIN_UID=toby
+ADMIN_EMAIL=toby@example.com
+ADMIN_SID=0000001
+ADMIN_PASSWORD=123Toby!
+ADMIN_PFP=/images/toby.png
+
+# Teacher user defaults
+TEACHER_NAME=Nikola Tesla
+TEACHER_UID=niko
+TEACHER_EMAIL=niko@example.com
+TEACHER_SID=0000002
+TEACHER_PASSWORD=123Niko!
+TEACHER_PFP=/images/niko.png
+
+# Default user for testing 
+USER_NAME=Grace Hopper
+USER_UID=hop
+USER_EMAIL=hop@example.com
+USER_SID=0000003
+USER_PASSWORD=123Hop!
+USER_PFP=/images/hop.png
+
+# Convience user defaults
+MY_NAME=John Mortensen
+MY_UID=jm1021
+MY_SID=0000004
+MY_EMAIL=jmort1021@gmail.com
+
+# JWT Cookie Settings - Local Development (HTTP)
+# These override the production defaults in application.properties
+jwt.cookie.secure=false
+jwt.cookie.same-site=Lax
+
+# API Keys (optional - defaults exist in application.properties)
+GAMIFY_API_URL=https://api.openai.com/v1/chat/completions
+GAMIFY_API_KEY=your-openai-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+GITHUB_API_TOKEN=your-github-token-here
+
+# Email Configuration (optional - overrides application.properties)
+# spring.mail.username=your-email@gmail.com
+# spring.mail.password=your-app-password
+```
+
+**Production Configuration:**
+- Production uses the secure defaults from `application.properties` (HTTPS settings)
+- No `.env` file needed on production unless overriding specific values
+- Use environment variables on production servers if preferred (e.g., `JWT_COOKIE_SECURE=true`)
+
+**Important:** Never commit the `.env` file to git. It contains sensitive credentials and local-only settings.
 
 ## Person MVC
 
@@ -104,6 +164,8 @@ socket.port=8589
 If you are working with the database, follow the below procedure to safely interact with the remote DB while applying changes locally. Certain scripts require spring to be running while others don't, so follow the instructions that the scripts provide.
 
 Note, steps 1,2,3,5 are on your development (LOCAL) server. You need to update your .env on development server and be sure all PRs are completed, pulled, and tested before you start pushing to production.
+
+0. Be sure ADMIN_PASSWORD is set in .env.  You will need a venv for the python scripts.
 
 1. Initialize your local DB with clean data. For example, this would be good to see that a schema update works correctly.
 > python scripts/db_init.py

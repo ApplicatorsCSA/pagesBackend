@@ -171,7 +171,15 @@ public class ImportsController {
     public String revertToBackup(@RequestParam("filename") String filename, Model model) {
         synchronized (lock) {
             try {
-                File backupFile = new File(BACKUP_DIR + filename);
+                // Prevent path traversal attacks
+                Path baseDir = Paths.get(BACKUP_DIR).toAbsolutePath().normalize();
+                Path filePath = baseDir.resolve(filename).normalize();
+                if (!filePath.startsWith(baseDir)) {
+                    model.addAttribute("message", "Invalid filename path.");
+                    return "db_management/db_error";
+                }
+                
+                File backupFile = filePath.toFile();
                 if (!backupFile.exists()) {
                     model.addAttribute("message", "Backup file not found.");
                     return "db_management/db_error";
@@ -199,7 +207,15 @@ public class ImportsController {
     @GetMapping("/view")
     public String viewBackupDetails(@RequestParam("filename") String filename, Model model) {
         try {
-            File backupFile = new File(BACKUP_DIR + filename);
+            // Prevent path traversal attacks
+            Path baseDir = Paths.get(BACKUP_DIR).toAbsolutePath().normalize();
+            Path filePath = baseDir.resolve(filename).normalize();
+            if (!filePath.startsWith(baseDir)) {
+                model.addAttribute("message", "Invalid filename path.");
+                return "db_management/db_error";
+            }
+            
+            File backupFile = filePath.toFile();
             if (!backupFile.exists()) {
                 model.addAttribute("message", "Backup file not found.");
                 return "db_management/db_error";
@@ -284,7 +300,21 @@ public class ImportsController {
                 return ResponseEntity.badRequest().body(result);
             }
 
-            Path filePath = Paths.get(backupBasePath, directoryName, filename);
+            // Prevent path traversal attacks
+            Path baseDir = Paths.get(backupBasePath, directoryName).toAbsolutePath().normalize();
+            Path filePath = baseDir.resolve(filename).normalize();
+            if (!filePath.startsWith(baseDir)) {
+                result.put("error", "Invalid filename path.");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // Enforce expected file format for specific imports
+            String nameOnly = filePath.getFileName().toString();
+            if (!nameOnly.endsWith(".json") || !nameOnly.startsWith(directoryName + "_backup_")) {
+                result.put("error", "Invalid backup file format.");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
             if (!Files.exists(filePath)) {
                 result.put("error", "Backup file not found: " + filePath);
                 return ResponseEntity.badRequest().body(result);

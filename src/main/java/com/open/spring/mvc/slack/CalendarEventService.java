@@ -25,6 +25,11 @@ public class CalendarEventService {
         return savedEvent;
     }
 
+    // Find event by title and date (for duplicate detection)
+    public CalendarEvent findByTitleAndDate(String title, LocalDate date) {
+        return calendarEventRepository.findByTitleAndDate(title, date).orElse(null);
+    }
+
     // Create a calendar event
     public void createCalendarEvent(String title, LocalDate eventDate, String description, String type, String period) {
         CalendarEvent event = new CalendarEvent();
