@@ -2,6 +2,7 @@ package com.open.spring.mvc.quant;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
@@ -13,7 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Pulls historical daily OHLCV from Stooq (free, no API key).
+ * Pulls historical daily OHLCV from Stooq.
  * Example:
  * https://stooq.com/q/d/l/?s=aapl.us&i=d
  */
@@ -22,12 +23,31 @@ public class MarketDataService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    /**
+     * Stooq now requires an API key for CSV downloads.
+     * Provide via env var `STOOQ_API_KEY` or Spring property `stooq.apiKey`.
+     */
+    @Value("${stooq.apiKey:${STOOQ_API_KEY:}}")
+    private String stooqApiKey;
+
     public List<Bar> getDailyBars(String ticker, LocalDate start, LocalDate end) {
         String stooqSymbol = toStooqSymbol(ticker);
         String url = "https://stooq.com/q/d/l/?s=" + stooqSymbol + "&i=d";
+        if (stooqApiKey != null && !stooqApiKey.isBlank()) {
+            url = url + "&apikey=" + stooqApiKey.trim();
+        }
 
         String csv = restTemplate.getForObject(url, String.class);
         if (csv == null || csv.isBlank()) return List.of();
+
+        // Stooq returns a human message when apiKey is missing/invalid.
+        String head = csv.stripLeading();
+        if (head.startsWith("Get your apikey") || head.contains("get_apikey")) {
+            throw new IllegalStateException(
+                    "Market data provider requires a STOOQ apiKey. " +
+                    "Set env STOOQ_API_KEY (or property stooq.apiKey) on the Spring server."
+            );
+        }
 
         List<Bar> bars = parseStooqCsv(csv, ticker);
 
@@ -56,6 +76,9 @@ public class MarketDataService {
         try (BufferedReader br = new BufferedReader(new StringReader(csv))) {
             String header = br.readLine(); // Date,Open,High,Low,Close,Volume
             if (header == null) return bars;
+            if (!header.toLowerCase().contains("date") || !header.toLowerCase().contains("close")) {
+                throw new IllegalArgumentException("Unexpected CSV header from provider: " + header);
+            }
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -84,7 +107,9 @@ public class MarketDataService {
                         "1d"
                 ));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to parse market data CSV from provider", e);
+        }
 
         return bars;
     }
