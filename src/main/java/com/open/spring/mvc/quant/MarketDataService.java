@@ -7,6 +7,11 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -202,17 +207,52 @@ public class MarketDataService {
     private List<Bar> fetchFromYahoo(String symbol) {
         // Unofficial endpoint; no key required but may change.
         // Use a long-ish range so we can satisfy most user ranges without another call.
-        String url = UriComponentsBuilder
-                .fromHttpUrl("https://query2.finance.yahoo.com/v8/finance/chart/" + symbol)
-                .queryParam("interval", "1d")
-                .queryParam("range", "2y")
-                .toUriString();
+        String[] hosts = new String[] {
+                "https://query2.finance.yahoo.com",
+                "https://query1.finance.yahoo.com"
+        };
 
-        String json = restTemplate.getForObject(url, String.class);
-        if (json == null || json.isBlank()) return List.of();
+        // Yahoo often rate-limits requests that look like "bots".
+        // Sending a normal browser UA helps reduce 429s.
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        headers.set("User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
 
+        String lastErr = null;
+        for (String host : hosts) {
+            String url = UriComponentsBuilder
+                    .fromHttpUrl(host + "/v8/finance/chart/" + symbol)
+                    .queryParam("interval", "1d")
+                    .queryParam("range", "2y")
+                    .toUriString();
+
+            try {
+                ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+                String json = resp.getBody();
+                if (json == null || json.isBlank()) continue;
+
+                JsonNode root = objectMapper.readTree(json);
+                List<Bar> parsed = parseYahooChart(root, symbol);
+                if (!parsed.isEmpty()) return parsed;
+            } catch (Exception e) {
+                lastErr = e.getMessage();
+                // if this host rate-limits, try the next host
+            }
+        }
+
+        // If rate limited, fall back to cached data if we have it
+        CacheEntry fallback = seriesCache.get(symbol);
+        if (fallback != null && fallback.bars != null && !fallback.bars.isEmpty()) {
+            return fallback.bars;
+        }
+
+        throw new IllegalStateException("Yahoo Finance fetch failed" + (lastErr != null ? (": " + lastErr) : ""));
+    }
+
+    private List<Bar> parseYahooChart(JsonNode root, String symbol) {
         try {
-            JsonNode root = objectMapper.readTree(json);
             JsonNode result0 = root.path("chart").path("result");
             if (!result0.isArray() || result0.isEmpty()) return List.of();
             JsonNode r = result0.get(0);
