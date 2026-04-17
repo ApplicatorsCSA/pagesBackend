@@ -145,14 +145,36 @@ public class BankApiController {
     // POST /bank/quant/indicators/calc
     @PostMapping("/quant/indicators/calc")
     public ResponseEntity<?> quantIndicators(@RequestBody IndicatorsRequest req) {
-        var bars = marketDataService.getDailyBars(req.ticker, req.start, req.end);
-        var out = indicatorService.calculateAll(
-                bars,
-                req.maShort, req.maLong,
-                req.rsiPeriod,
-                req.bbPeriod,
-                req.macdFast, req.macdSlow);
-        return ResponseEntity.ok(out);
+        try {
+            var bars = marketDataService.getDailyBars(req.ticker, req.start, req.end);
+            if (bars == null || bars.isEmpty()) {
+                // Common with Alpha Vantage free tier (compact history) when users request multi-year ranges.
+                return ResponseEntity.unprocessableEntity().body(Map.of(
+                        "success", false,
+                        "error", "no_market_data",
+                        "message", "No bars returned for that ticker/date range. If using Alpha Vantage free tier, try a shorter range (last ~100 trading days)."
+                ));
+            }
+            var out = indicatorService.calculateAll(
+                    bars,
+                    req.maShort, req.maLong,
+                    req.rsiPeriod,
+                    req.bbPeriod,
+                    req.macdFast, req.macdSlow);
+            return ResponseEntity.ok(out);
+        } catch (IllegalArgumentException iae) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "bad_request",
+                    "message", iae.getMessage()
+            ));
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "success", false,
+                    "error", "indicator_calc_failed",
+                    "message", ex.getMessage()
+            ));
+        }
     }
 
     // 3) News sentiment features (overall + categories + headlines)
