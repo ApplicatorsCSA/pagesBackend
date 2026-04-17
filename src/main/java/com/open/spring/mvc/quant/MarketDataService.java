@@ -19,7 +19,7 @@ import java.util.Locale;
  * Pulls historical daily OHLCV from Alpha Vantage.
  *
  * Uses:
- * - TIME_SERIES_DAILY_ADJUSTED (daily OHLCV, with corporate actions included)
+ * - TIME_SERIES_DAILY (free tier daily OHLCV)
  *
  * Config:
  * - env var `ALPHAVANTAGE_API_KEY` or Spring property `alphavantage.apiKey`
@@ -52,7 +52,7 @@ public class MarketDataService {
 
         // Alpha Vantage returns latest first; we'll sort ascending at the end.
         String url = "https://www.alphavantage.co/query"
-                + "?function=TIME_SERIES_DAILY_ADJUSTED"
+                + "?function=TIME_SERIES_DAILY"
                 + "&symbol=" + sym
                 + "&outputsize=full"
                 + "&apikey=" + key;
@@ -94,7 +94,7 @@ public class MarketDataService {
                 double high = row.path("2. high").asDouble(Double.NaN);
                 double low = row.path("3. low").asDouble(Double.NaN);
                 double close = row.path("4. close").asDouble(Double.NaN);
-                long volume = row.path("6. volume").asLong(0);
+                long volume = row.path("5. volume").asLong(0);
 
                 if (!Double.isFinite(close) || close <= 0) return;
                 Instant t = d.atStartOfDay().toInstant(ZoneOffset.UTC);
