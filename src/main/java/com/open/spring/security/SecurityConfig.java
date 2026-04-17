@@ -108,6 +108,9 @@ public class SecurityConfig {
                         .authenticated()
 
                         // ========= ANALYTICS =========
+                        // Allow GitHub Pages clients to submit analytics without login.
+                        // The controller will still attempt to associate by uid if provided.
+                        .requestMatchers(HttpMethod.POST, "/api/ocs-analytics/save").permitAll()
                         .requestMatchers("/api/ocs-analytics/**").authenticated()
 
                         // ========= DEFAULT =========

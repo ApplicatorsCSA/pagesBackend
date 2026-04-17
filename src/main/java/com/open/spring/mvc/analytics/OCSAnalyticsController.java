@@ -15,7 +15,6 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/ocs-analytics")
-@CrossOrigin(origins = {"http://localhost:8080", "http://localhost:4000", "http://127.0.0.1:4100", "http://localhost:4100", "https://open-coding-society.github.io"}, allowCredentials = "true")
 public class OCSAnalyticsController {
 
     @Autowired
@@ -34,20 +33,20 @@ public class OCSAnalyticsController {
             @AuthenticationPrincipal UserDetails userDetails) {
         
         try {
-            // Try to get person from authentication first
-            Person person = null;
-            
-            if (userDetails != null) {
-                // User is authenticated - use their UID from auth
-                person = personRepository.findByUid(userDetails.getUsername());
-            } else if (dto.getUid() != null && !dto.getUid().isEmpty()) {
-                // Fallback: use UID from DTO if provided
-                person = personRepository.findByUid(dto.getUid());
+            // Design goal:
+            // - The frontend should be able to run without login.
+            // - We only persist analytics to a user if the user is authenticated.
+            if (userDetails == null) {
+                // Anonymous session: accept the event but don't persist it.
+                // (Avoids noisy 401/CORS failures on GitHub Pages.)
+                return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
             }
-            
+
+            // Authenticated session: attach analytics to the signed-in user.
+            Person person = personRepository.findByUid(userDetails.getUsername());
             if (person == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body("User not found. Please provide valid uid or be authenticated.");
+                    .body("User not found for authenticated session.");
             }
 
             // Create analytics record
