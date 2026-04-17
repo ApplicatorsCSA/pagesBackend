@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -120,9 +121,24 @@ public class BankApiController {
             @RequestParam String ticker,
             @RequestParam String start,
             @RequestParam String end) {
-        LocalDate s = LocalDate.parse(start);
-        LocalDate e = LocalDate.parse(end);
-        return ResponseEntity.ok(marketDataService.getDailyBars(ticker, s, e));
+        try {
+            LocalDate s = LocalDate.parse(start);
+            LocalDate e = LocalDate.parse(end);
+            return ResponseEntity.ok(marketDataService.getDailyBars(ticker, s, e));
+        } catch (IllegalArgumentException iae) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "bad_request",
+                    "message", iae.getMessage()
+            ));
+        } catch (Exception ex) {
+            // Common cause: market data provider requires an API key or is unavailable.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "success", false,
+                    "error", "market_data_unavailable",
+                    "message", ex.getMessage()
+            ));
+        }
     }
 
     // 2) Indicators (MA/RSI/BB/MACD)

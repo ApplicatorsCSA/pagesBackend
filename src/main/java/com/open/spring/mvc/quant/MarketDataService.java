@@ -1,126 +1,110 @@
 package com.open.spring.mvc.quant;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.beans.factory.annotation.Value;
 
-import java.io.BufferedReader;
-import java.io.StringReader;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Pulls historical daily OHLCV from Stooq.
- * Example:
- * https://stooq.com/q/d/l/?s=aapl.us&i=d
+ * Pulls historical daily OHLCV from Alpha Vantage.
+ *
+ * Uses:
+ * - TIME_SERIES_DAILY_ADJUSTED (daily OHLCV, with corporate actions included)
+ *
+ * Config:
+ * - env var `ALPHAVANTAGE_API_KEY` or Spring property `alphavantage.apiKey`
  */
 @Service
 public class MarketDataService {
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Stooq now requires an API key for CSV downloads.
-     * Provide via env var `STOOQ_API_KEY` or Spring property `stooq.apiKey`.
+     * Alpha Vantage API key.
+     * Provide via env var `ALPHAVANTAGE_API_KEY` or Spring property `alphavantage.apiKey`.
      */
-    @Value("${stooq.apiKey:${STOOQ_API_KEY:}}")
-    private String stooqApiKey;
+    @Value("${alphavantage.apiKey:${ALPHAVANTAGE_API_KEY:}}")
+    private String alphaVantageApiKey;
 
     public List<Bar> getDailyBars(String ticker, LocalDate start, LocalDate end) {
-        String stooqSymbol = toStooqSymbol(ticker);
-        String url = "https://stooq.com/q/d/l/?s=" + stooqSymbol + "&i=d";
-        if (stooqApiKey != null && !stooqApiKey.isBlank()) {
-            url = url + "&apikey=" + stooqApiKey.trim();
-        }
+        String sym = (ticker == null ? "" : ticker.trim().toUpperCase(Locale.ROOT));
+        if (sym.isBlank()) throw new IllegalArgumentException("ticker is required");
+        if (start == null || end == null) throw new IllegalArgumentException("start/end are required");
+        if (end.isBefore(start)) throw new IllegalArgumentException("end must be >= start");
 
-        String csv = restTemplate.getForObject(url, String.class);
-        if (csv == null || csv.isBlank()) return List.of();
-
-        // Stooq returns a human message when apiKey is missing/invalid.
-        String head = csv.stripLeading();
-        if (head.startsWith("Get your apikey") || head.contains("get_apikey")) {
+        String key = alphaVantageApiKey == null ? "" : alphaVantageApiKey.trim();
+        if (key.isBlank()) {
             throw new IllegalStateException(
-                    "Market data provider requires a STOOQ apiKey. " +
-                    "Set env STOOQ_API_KEY (or property stooq.apiKey) on the Spring server."
+                    "Missing Alpha Vantage API key. Set env ALPHAVANTAGE_API_KEY (or property alphavantage.apiKey) on the Spring server."
             );
         }
 
-        List<Bar> bars = parseStooqCsv(csv, ticker);
+        // Alpha Vantage returns latest first; we'll sort ascending at the end.
+        String url = "https://www.alphavantage.co/query"
+                + "?function=TIME_SERIES_DAILY_ADJUSTED"
+                + "&symbol=" + sym
+                + "&outputsize=full"
+                + "&apikey=" + key;
 
-        List<Bar> filtered = new ArrayList<>();
-        for (Bar b : bars) {
-            LocalDate d = b.getTime().atZone(ZoneOffset.UTC).toLocalDate();
-            if ((d.isEqual(start) || d.isAfter(start)) &&
-                (d.isEqual(end) || d.isBefore(end))) {
-                filtered.add(b);
-            }
-        }
+        String json = restTemplate.getForObject(url, String.class);
+        if (json == null || json.isBlank()) return List.of();
 
-        filtered.sort(Comparator.comparing(Bar::getTime));
-        return filtered;
-    }
-
-    private String toStooqSymbol(String ticker) {
-        String t = ticker.trim().toLowerCase();
-        if (t.contains(".")) return t;
-        return t + ".us";
-    }
-
-    private List<Bar> parseStooqCsv(String csv, String ticker) {
-        List<Bar> bars = new ArrayList<>();
-
-        try (BufferedReader br = new BufferedReader(new StringReader(csv))) {
-            String header = br.readLine(); // Date,Open,High,Low,Close,Volume
-            if (header == null) return bars;
-            if (!header.toLowerCase().contains("date") || !header.toLowerCase().contains("close")) {
-                throw new IllegalArgumentException("Unexpected CSV header from provider: " + header);
-            }
-
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] p = line.split(",");
-                if (p.length < 6) continue;
-
-                LocalDate date = LocalDate.parse(p[0]);
-                Instant time = date.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-                double open = safeDouble(p[1]);
-                double high = safeDouble(p[2]);
-                double low = safeDouble(p[3]);
-                double close = safeDouble(p[4]);
-                long volume = safeLong(p[5]);
-
-                if (Double.isNaN(close) || close <= 0) continue;
-
-                bars.add(new Bar(
-                        ticker.toUpperCase(),
-                        time,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume,
-                        "1d"
-                ));
-            }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(json);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse market data CSV from provider", e);
+            throw new IllegalStateException("Failed to parse Alpha Vantage response", e);
         }
 
-        return bars;
-    }
+        // Error / throttle responses
+        if (root.hasNonNull("Error Message")) {
+            throw new IllegalStateException("Alpha Vantage error: " + root.get("Error Message").asText());
+        }
+        if (root.hasNonNull("Note")) {
+            throw new IllegalStateException("Alpha Vantage throttle: " + root.get("Note").asText());
+        }
+        if (root.hasNonNull("Information")) {
+            throw new IllegalStateException("Alpha Vantage info: " + root.get("Information").asText());
+        }
 
-    private double safeDouble(String s) {
-        try { return Double.parseDouble(s); }
-        catch (Exception e) { return Double.NaN; }
-    }
+        JsonNode series = root.get("Time Series (Daily)");
+        if (series == null || !series.isObject()) {
+            return List.of();
+        }
 
-    private long safeLong(String s) {
-        try { return Long.parseLong(s); }
-        catch (Exception e) { return 0; }
+        List<Bar> out = new ArrayList<>();
+        series.fields().forEachRemaining(entry -> {
+            try {
+                LocalDate d = LocalDate.parse(entry.getKey());
+                if (d.isBefore(start) || d.isAfter(end)) return;
+
+                JsonNode row = entry.getValue();
+                double open = row.path("1. open").asDouble(Double.NaN);
+                double high = row.path("2. high").asDouble(Double.NaN);
+                double low = row.path("3. low").asDouble(Double.NaN);
+                double close = row.path("4. close").asDouble(Double.NaN);
+                long volume = row.path("6. volume").asLong(0);
+
+                if (!Double.isFinite(close) || close <= 0) return;
+                Instant t = d.atStartOfDay().toInstant(ZoneOffset.UTC);
+                out.add(new Bar(sym, t, open, high, low, close, volume, "1d"));
+            } catch (Exception ignored) {
+                // skip malformed rows
+            }
+        });
+
+        out.sort(Comparator.comparing(Bar::getTime));
+        return out;
     }
 }
