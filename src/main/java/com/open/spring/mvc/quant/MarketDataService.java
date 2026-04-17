@@ -12,10 +12,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.ClassPathResource;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.StringReader;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -37,6 +44,24 @@ public class MarketDataService {
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Request-level caches (mirrors the "in-memory cache + Streamlit cache" idea).
+     * Keyed by: SYMBOL|START|END
+     */
+    private static final long MEM_TTL_MS = 10 * 60 * 1000L; // 10 minutes
+    private static final long STREAMLIT_TTL_MS = 60 * 60 * 1000L; // 1 hour
+    private final Map<String, RangeCacheEntry> memRangeCache = new ConcurrentHashMap<>();
+    private final Map<String, RangeCacheEntry> streamlitRangeCache = new ConcurrentHashMap<>();
+
+    private static class RangeCacheEntry {
+        final long expiresAtMs;
+        final List<Bar> bars;
+        RangeCacheEntry(long expiresAtMs, List<Bar> bars) {
+            this.expiresAtMs = expiresAtMs;
+            this.bars = bars;
+        }
+    }
 
     /**
      * Alpha Vantage free tier is rate-limited. Cache the most recent successful series per symbol
@@ -70,11 +95,26 @@ public class MarketDataService {
     @Value("${market.provider:auto}")
     private String marketProvider;
 
+    @Value("${market.local.enabled:true}")
+    private boolean localFallbackEnabled;
+
     public List<Bar> getDailyBars(String ticker, LocalDate start, LocalDate end) {
         String sym = (ticker == null ? "" : ticker.trim().toUpperCase(Locale.ROOT));
         if (sym.isBlank()) throw new IllegalArgumentException("ticker is required");
         if (start == null || end == null) throw new IllegalArgumentException("start/end are required");
         if (end.isBefore(start)) throw new IllegalArgumentException("end must be >= start");
+
+        // 1) in-memory cache (range-specific)
+        String rangeKey = sym + "|" + start + "|" + end;
+        List<Bar> memHit = getIfFresh(memRangeCache, rangeKey);
+        if (memHit != null) return memHit;
+
+        // 2) Streamlit-like cache (range-specific, 1h TTL)
+        List<Bar> stHit = getIfFresh(streamlitRangeCache, rangeKey);
+        if (stHit != null) {
+            put(memRangeCache, rangeKey, stHit, MEM_TTL_MS);
+            return stHit;
+        }
 
         String key = alphaVantageApiKey == null ? "" : alphaVantageApiKey.trim();
         String provider = (marketProvider == null ? "auto" : marketProvider.trim().toLowerCase(Locale.ROOT));
@@ -88,11 +128,28 @@ public class MarketDataService {
 
         // Provider choice
         if ("yahoo".equals(provider)) {
-            List<Bar> yahoo = fetchFromYahoo(sym);
-            if (!yahoo.isEmpty()) {
-                seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+            try {
+                List<Bar> yahoo = fetchYahooLayered(sym, start, end);
+                if (!yahoo.isEmpty()) {
+                    seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                }
+                List<Bar> out = filterRange(yahoo, start, end);
+                put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                return out;
+            } catch (Exception e) {
+                if (localFallbackEnabled) {
+                    List<Bar> local = fetchFromLocalCsv(sym);
+                    if (!local.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), local));
+                        List<Bar> out = filterRange(local, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
+                }
+                throw e;
             }
-            return filterRange(yahoo, start, end);
         }
 
         if ("alphavantage".equals(provider) || "auto".equals(provider)) {
@@ -103,11 +160,28 @@ public class MarketDataService {
                     );
                 }
                 // auto mode with no key -> use Yahoo
-                List<Bar> yahoo = fetchFromYahoo(sym);
-                if (!yahoo.isEmpty()) {
-                    seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                try {
+                    List<Bar> yahoo = fetchYahooLayered(sym, start, end);
+                    if (!yahoo.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                    }
+                    List<Bar> out = filterRange(yahoo, start, end);
+                    put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                    put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                    return out;
+                } catch (Exception e) {
+                    if (localFallbackEnabled) {
+                        List<Bar> local = fetchFromLocalCsv(sym);
+                        if (!local.isEmpty()) {
+                            seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), local));
+                            List<Bar> out = filterRange(local, start, end);
+                            put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                            put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                            return out;
+                        }
+                    }
+                    throw e;
                 }
-                return filterRange(yahoo, start, end);
             }
         }
 
@@ -133,10 +207,27 @@ public class MarketDataService {
         // Error / throttle responses
         if (root.hasNonNull("Error Message")) {
             if ("auto".equals(provider)) {
-                List<Bar> yahoo = fetchFromYahoo(sym);
-                if (!yahoo.isEmpty()) {
-                    seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
-                    return filterRange(yahoo, start, end);
+                try {
+                    List<Bar> yahoo = fetchYahooLayered(sym, start, end);
+                    if (!yahoo.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                        List<Bar> out = filterRange(yahoo, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
+                } catch (Exception ignored) {
+                    // fall through to local fallback below
+                }
+                if (localFallbackEnabled) {
+                    List<Bar> local = fetchFromLocalCsv(sym);
+                    if (!local.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), local));
+                        List<Bar> out = filterRange(local, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
                 }
             }
             throw new IllegalStateException("Alpha Vantage error: " + root.get("Error Message").asText());
@@ -148,10 +239,25 @@ public class MarketDataService {
                 return filterRange(fallback.bars, start, end);
             }
             if ("auto".equals(provider)) {
-                List<Bar> yahoo = fetchFromYahoo(sym);
-                if (!yahoo.isEmpty()) {
-                    seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
-                    return filterRange(yahoo, start, end);
+                try {
+                    List<Bar> yahoo = fetchYahooLayered(sym, start, end);
+                    if (!yahoo.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                        List<Bar> out = filterRange(yahoo, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
+                } catch (Exception ignored) {}
+                if (localFallbackEnabled) {
+                    List<Bar> local = fetchFromLocalCsv(sym);
+                    if (!local.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), local));
+                        List<Bar> out = filterRange(local, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
                 }
             }
             throw new IllegalStateException("Alpha Vantage throttle: " + root.get("Note").asText());
@@ -163,10 +269,25 @@ public class MarketDataService {
                 return filterRange(fallback.bars, start, end);
             }
             if ("auto".equals(provider)) {
-                List<Bar> yahoo = fetchFromYahoo(sym);
-                if (!yahoo.isEmpty()) {
-                    seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
-                    return filterRange(yahoo, start, end);
+                try {
+                    List<Bar> yahoo = fetchYahooLayered(sym, start, end);
+                    if (!yahoo.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), yahoo));
+                        List<Bar> out = filterRange(yahoo, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
+                } catch (Exception ignored) {}
+                if (localFallbackEnabled) {
+                    List<Bar> local = fetchFromLocalCsv(sym);
+                    if (!local.isEmpty()) {
+                        seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), local));
+                        List<Bar> out = filterRange(local, start, end);
+                        put(memRangeCache, rangeKey, out, MEM_TTL_MS);
+                        put(streamlitRangeCache, rangeKey, out, STREAMLIT_TTL_MS);
+                        return out;
+                    }
                 }
             }
             throw new IllegalStateException("Alpha Vantage info: " + root.get("Information").asText());
@@ -201,54 +322,156 @@ public class MarketDataService {
         if (!out.isEmpty()) {
             seriesCache.put(sym, new CacheEntry(System.currentTimeMillis(), out));
         }
-        return filterRange(out, start, end);
+        List<Bar> finalOut = filterRange(out, start, end);
+        put(memRangeCache, rangeKey, finalOut, MEM_TTL_MS);
+        put(streamlitRangeCache, rangeKey, finalOut, STREAMLIT_TTL_MS);
+        return finalOut;
     }
 
-    private List<Bar> fetchFromYahoo(String symbol) {
-        // Unofficial endpoint; no key required but may change.
-        // Use a long-ish range so we can satisfy most user ranges without another call.
-        String[] hosts = new String[] {
-                "https://query2.finance.yahoo.com",
-                "https://query1.finance.yahoo.com"
-        };
+    private List<Bar> fetchYahooLayered(String symbol, LocalDate start, LocalDate end) {
+        // 3) exact epoch range
+        try {
+            List<Bar> bars = fetchYahooByEpochRange(symbol, start, end);
+            if (!bars.isEmpty()) return bars;
+        } catch (Exception ignored) {}
 
-        // Yahoo often rate-limits requests that look like "bots".
-        // Sending a normal browser UA helps reduce 429s.
+        // 4) period/range then trim
+        try {
+            String range = toYahooRange(start, end);
+            List<Bar> bars = fetchYahooByRange(symbol, range);
+            List<Bar> trimmed = filterRange(bars, start, end);
+            if (!trimmed.isEmpty()) return trimmed;
+        } catch (Exception ignored) {}
+
+        // 5) fallback 1y then trim
+        try {
+            List<Bar> bars = fetchYahooByRange(symbol, "1y");
+            List<Bar> trimmed = filterRange(bars, start, end);
+            if (!trimmed.isEmpty()) return trimmed;
+        } catch (Exception ignored) {}
+
+        // 6) alternate download CSV endpoint then trim
+        try {
+            List<Bar> bars = fetchYahooDownloadCsv(symbol, start, end);
+            List<Bar> trimmed = filterRange(bars, start, end);
+            if (!trimmed.isEmpty()) return trimmed;
+        } catch (Exception ignored) {}
+
+        // then optional local CSV
+        if (localFallbackEnabled) {
+            List<Bar> local = fetchFromLocalCsv(symbol);
+            if (!local.isEmpty()) return local;
+        }
+
+        throw new IllegalStateException("Yahoo Finance fetch failed (all fallback methods exhausted)");
+    }
+
+    private String toYahooRange(LocalDate start, LocalDate end) {
+        long days = Math.max(1, ChronoUnit.DAYS.between(start, end) + 1);
+        if (days <= 31) return "3mo";
+        if (days <= 93) return "6mo";
+        if (days <= 186) return "1y";
+        if (days <= 365) return "2y";
+        return "5y";
+    }
+
+    private List<Bar> fetchYahooByEpochRange(String symbol, LocalDate start, LocalDate end) throws Exception {
+        long period1 = start.atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+        long period2 = end.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+        String[] hosts = new String[] {"https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"};
+        for (String host : hosts) {
+            String url = UriComponentsBuilder
+                    .fromHttpUrl(host + "/v8/finance/chart/" + symbol)
+                    .queryParam("interval", "1d")
+                    .queryParam("period1", period1)
+                    .queryParam("period2", period2)
+                    .toUriString();
+            List<Bar> out = yahooRequestAndParseChart(url, symbol);
+            if (!out.isEmpty()) return out;
+        }
+        return List.of();
+    }
+
+    private List<Bar> fetchYahooByRange(String symbol, String range) throws Exception {
+        String[] hosts = new String[] {"https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"};
+        for (String host : hosts) {
+            String url = UriComponentsBuilder
+                    .fromHttpUrl(host + "/v8/finance/chart/" + symbol)
+                    .queryParam("interval", "1d")
+                    .queryParam("range", range)
+                    .toUriString();
+            List<Bar> out = yahooRequestAndParseChart(url, symbol);
+            if (!out.isEmpty()) return out;
+        }
+        return List.of();
+    }
+
+    private List<Bar> yahooRequestAndParseChart(String url, String symbol) throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         headers.set("User-Agent",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
-        String lastErr = null;
-        for (String host : hosts) {
-            String url = UriComponentsBuilder
-                    .fromHttpUrl(host + "/v8/finance/chart/" + symbol)
-                    .queryParam("interval", "1d")
-                    .queryParam("range", "2y")
-                    .toUriString();
+        ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        String json = resp.getBody();
+        if (json == null || json.isBlank()) return List.of();
+        JsonNode root = objectMapper.readTree(json);
+        return parseYahooChart(root, symbol);
+    }
 
-            try {
-                ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                String json = resp.getBody();
-                if (json == null || json.isBlank()) continue;
+    private List<Bar> fetchYahooDownloadCsv(String symbol, LocalDate start, LocalDate end) throws Exception {
+        long period1 = start.atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+        long period2 = end.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC);
 
-                JsonNode root = objectMapper.readTree(json);
-                List<Bar> parsed = parseYahooChart(root, symbol);
-                if (!parsed.isEmpty()) return parsed;
-            } catch (Exception e) {
-                lastErr = e.getMessage();
-                // if this host rate-limits, try the next host
+        String url = UriComponentsBuilder
+                .fromHttpUrl("https://query1.finance.yahoo.com/v7/finance/download/" + urlEncode(symbol))
+                .queryParam("period1", period1)
+                .queryParam("period2", period2)
+                .queryParam("interval", "1d")
+                .queryParam("events", "history")
+                .queryParam("includeAdjustedClose", "true")
+                .toUriString();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.TEXT_PLAIN, MediaType.ALL));
+        headers.set("User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        String csv = resp.getBody();
+        if (csv == null || csv.isBlank()) return List.of();
+        return parseYahooDownloadCsv(csv, symbol);
+    }
+
+    private String urlEncode(String s) {
+        return URLEncoder.encode(s, StandardCharsets.UTF_8);
+    }
+
+    private List<Bar> parseYahooDownloadCsv(String csv, String symbol) throws Exception {
+        List<Bar> out = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new StringReader(csv))) {
+            String header = br.readLine();
+            if (header == null) return List.of();
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.contains("null")) continue;
+                String[] p = line.split(",");
+                if (p.length < 7) continue;
+                LocalDate d = LocalDate.parse(p[0].trim());
+                Instant t = d.atStartOfDay().toInstant(ZoneOffset.UTC);
+                double o = parseDouble(p[1]);
+                double h = parseDouble(p[2]);
+                double l = parseDouble(p[3]);
+                double c = parseDouble(p[4]);
+                long v = parseLong(p[6]);
+                if (!Double.isFinite(c) || c <= 0) continue;
+                out.add(new Bar(symbol, t, o, h, l, c, v, "1d"));
             }
         }
-
-        // If rate limited, fall back to cached data if we have it
-        CacheEntry fallback = seriesCache.get(symbol);
-        if (fallback != null && fallback.bars != null && !fallback.bars.isEmpty()) {
-            return fallback.bars;
-        }
-
-        throw new IllegalStateException("Yahoo Finance fetch failed" + (lastErr != null ? (": " + lastErr) : ""));
+        out.sort(Comparator.comparing(Bar::getTime));
+        return out;
     }
 
     private List<Bar> parseYahooChart(JsonNode root, String symbol) {
@@ -291,6 +514,61 @@ public class MarketDataService {
         } catch (Exception e) {
             throw new IllegalStateException("Yahoo Finance parse failed", e);
         }
+    }
+
+    private List<Bar> fetchFromLocalCsv(String symbol) {
+        // Looks for: src/main/resources/market-data/<SYMBOL>.csv on the classpath
+        String path = "market-data/" + symbol.toUpperCase(Locale.ROOT) + ".csv";
+        ClassPathResource res = new ClassPathResource(path);
+        if (!res.exists()) return List.of();
+
+        List<Bar> out = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(res.getInputStream()))) {
+            String header = br.readLine(); // Date,Open,High,Low,Close,Volume
+            if (header == null) return List.of();
+
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] p = line.split(",");
+                if (p.length < 6) continue;
+                LocalDate d = LocalDate.parse(p[0].trim());
+                Instant t = d.atStartOfDay().toInstant(ZoneOffset.UTC);
+                double o = parseDouble(p[1]);
+                double h = parseDouble(p[2]);
+                double l = parseDouble(p[3]);
+                double c = parseDouble(p[4]);
+                long v = parseLong(p[5]);
+                if (!Double.isFinite(c) || c <= 0) continue;
+                out.add(new Bar(symbol.toUpperCase(Locale.ROOT), t, o, h, l, c, v, "1d"));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Local CSV parse failed for " + path, e);
+        }
+
+        out.sort(Comparator.comparing(Bar::getTime));
+        return out;
+    }
+
+    private double parseDouble(String s) {
+        try { return Double.parseDouble(s.trim()); } catch (Exception e) { return Double.NaN; }
+    }
+
+    private long parseLong(String s) {
+        try { return Long.parseLong(s.trim()); } catch (Exception e) { return 0L; }
+    }
+
+    private List<Bar> getIfFresh(Map<String, RangeCacheEntry> cache, String key) {
+        RangeCacheEntry e = cache.get(key);
+        if (e == null) return null;
+        if (System.currentTimeMillis() > e.expiresAtMs) {
+            cache.remove(key);
+            return null;
+        }
+        return e.bars;
+    }
+
+    private void put(Map<String, RangeCacheEntry> cache, String key, List<Bar> bars, long ttlMs) {
+        cache.put(key, new RangeCacheEntry(System.currentTimeMillis() + ttlMs, bars));
     }
 
     private List<Bar> filterRange(List<Bar> bars, LocalDate start, LocalDate end) {
