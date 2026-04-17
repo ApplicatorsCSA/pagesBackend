@@ -54,7 +54,7 @@ public class MarketDataService {
         String url = "https://www.alphavantage.co/query"
                 + "?function=TIME_SERIES_DAILY"
                 + "&symbol=" + sym
-                + "&outputsize=full"
+                // Free tier: omit outputsize=full (premium). Defaults to compact (~100 most recent points).
                 + "&apikey=" + key;
 
         String json = restTemplate.getForObject(url, String.class);
