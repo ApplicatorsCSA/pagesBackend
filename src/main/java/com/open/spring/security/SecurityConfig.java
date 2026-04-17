@@ -125,7 +125,12 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowCredentials(true);
+        // Local dev (Jekyll default is :4000; some use :4500)
+        configuration.addAllowedOriginPattern("http://localhost:4000");
         configuration.addAllowedOriginPattern("http://localhost:4500");
+        // GitHub Pages deployment for this frontend
+        configuration.addAllowedOriginPattern("https://applicatorscsa.github.io");
+
         configuration.addAllowedOriginPattern("https://opencodingsociety.com");
         configuration.addAllowedOriginPattern("http://opencodingsociety.com");
         configuration.addAllowedOriginPattern("https://pages.opencodingsociety.com");
